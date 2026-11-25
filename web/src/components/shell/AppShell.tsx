@@ -4,8 +4,8 @@
  * Also home of the keyboard shortcuts (j/k, e, /, ?), the counters and the page title.
  */
 import { CalendarRange, ChevronDown, GitCompareArrows, Inbox, Keyboard, LayoutGrid, LogOut, Moon, PaintRoller, ReceiptText, Search, Sun, X, type LucideIcon } from "lucide-react";
-import { AnimatePresence, LayoutGroup, motion } from "motion/react";
-import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { AnimatePresence, LayoutGroup, motion, PresenceContext } from "motion/react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { navigate, useApi, usePath, useSearch } from "../../lib";
 import { companyOf, currentTheme, getMode, setMode, subscribeMode } from "../../theme";
 import { cn } from "../../utils";
@@ -377,6 +377,20 @@ function BottomTabs({ counts, path }: { counts: Counts | null; path: string }) {
 // ---------------------------------------------------------------- shell
 
 /** Top-level section of a path; the view fades over only when this changes, not when a mail is picked. */
+/**
+ * Lets a section's content appear as it is when it is already there on the first render: that is the case
+ * when the user comes back and the data comes from the view cache (useApi in lib.ts). Its entrance
+ * animations would only replay and look like loading. Whatever mounts later (data that arrives, a mail that
+ * opens) animates as usual, because the block covers the first render only.
+ */
+function NoReplay({ children }: { children: ReactNode }) {
+  const presence = useContext(PresenceContext);
+  const [firstRender, setFirstRender] = useState(true);
+  useEffect(() => setFirstRender(false), []);
+  const value = useMemo(() => (presence && firstRender ? { ...presence, initial: false as const } : presence), [presence, firstRender]);
+  return <PresenceContext.Provider value={value}>{children}</PresenceContext.Provider>;
+}
+
 function sectionOf(path: string) {
   const first = path.split("/")[1] ?? "";
   return ["mail", "freigabe", "pruefliste"].includes(first) ? "posteingang" : first;
@@ -485,7 +499,7 @@ export function AppShell({ mode, onLogout, children }: { mode: "mock" | "claude"
                   exit={{ opacity: 0, y: -4 }}
                   transition={{ duration: 0.16, ease: [0.23, 1, 0.32, 1] }}
                 >
-                  {children}
+                  <NoReplay>{children}</NoReplay>
                 </motion.div>
               </AnimatePresence>
             </main>

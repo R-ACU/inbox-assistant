@@ -54,7 +54,7 @@ Measured on this repository, on a laptop, in mock mode unless stated otherwise:
 | What | Result |
 | :--- | :--- |
 | Unit, integration and security tests (Vitest), including regression tests for every finding of a security review and WCAG contrast checks for every accent in light and dark mode | **316 passed** |
-| End-to-end tests in headless Chromium (Playwright), including one test per accent and mode (10) that measures the contrast of every visible text in nineteen views, and regression tests for fast back and forward between the tabs and for numbers that count up only once | **33 passed** |
+| End-to-end tests in headless Chromium (Playwright), including one test per accent and mode (10) that measures the contrast of every visible text in nineteen views, regression tests for fast back and forward between the tabs and for numbers that count up only once, and tests that a view opened before comes back at once with its data (no placeholder, no replayed entrance), shows a change made elsewhere, and is not shown from a cache after logging out | **39 passed** |
 | Pipeline test over the 20-mail test set (`npm run eval`, mock answers) | routing **20 / 20**, traps caught **4 / 4**, sent without approval **0** |
 | n8n 2.49.5, local: import, publish, one full run (`npm run n8n -- demo`) | execution status **success**: webhook, signed hand-over, wait, approval, signed fetch, SMTP delivery, signed confirmation, 1 mail in the test SMTP server. Re-run after the hardening of the workflow settings and the n8n process environment |
 | n8n webhook without or with a wrong token, resume URL without n8n's signature | rejected (403, 403, 401) |

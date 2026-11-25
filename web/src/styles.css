@@ -286,7 +286,8 @@
   --animate-pop-out: pop-out 120ms var(--ease-out);
   --animate-fade-in: fade-in 180ms var(--ease-out);
   --animate-rise: rise 260ms var(--ease-out) both;
-  --animate-shimmer: shimmer 1.4s ease-in-out infinite;
+  /* Placeholders appear only when loading really takes a moment: nothing for 400 ms, then they fade in and pulse. */
+  --animate-shimmer: fade-in 200ms var(--ease-out) 400ms both, shimmer 1.4s ease-in-out 600ms infinite;
 }
 
 @keyframes pop-in {

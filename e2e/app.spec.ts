@@ -24,9 +24,24 @@ test.describe("without a session", () => {
     await page.getByLabel("Passwort", { exact: true }).fill(E2E_PASSWORD);
     await page.getByRole("button", { name: "Anmelden" }).click();
     await expect(page.getByRole("heading", { name: "Übersicht" })).toBeVisible();
+    await expect(page.getByText(/Mails in 7 Tagen\.$/)).toBeVisible();
     await page.getByRole("button", { name: "Abmelden" }).click();
     await expect(page.getByLabel("Passwort", { exact: true })).toBeVisible();
     expect((await page.request.get("/api/mails")).status()).toBe(401);
+
+    // Nothing of the session stays in the view cache. The next sign-in is answered here (no second real
+    // login) and every other request waits: a cache that survived the logout would show the old overview at once.
+    await page.route("**/api/auth/login", (route) => route.fulfill({ json: { authenticated: true, csrfToken: "test", mode: "mock" } }));
+    await page.route(/\/api\/(?!auth\/)/, async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      await route.continue().catch(() => {});
+    });
+    await page.getByLabel("Passwort", { exact: true }).fill("irgendwas");
+    await page.getByRole("button", { name: "Anmelden" }).click();
+    await expect(page.getByRole("heading", { name: "Übersicht", level: 1 })).toBeVisible();
+    await expect(page.locator("main [aria-busy='true']").first()).toBeVisible();
+    await expect(page.getByText(/Mails in 7 Tagen\.$/)).toHaveCount(0);
+    await page.unrouteAll({ behavior: "ignoreErrors" });
   });
 });
 

@@ -1,5 +1,5 @@
 /** API client, router and formatting helpers for the web UI. */
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Category } from "../../src/shared/schemas";
 import type { MailStatus } from "../../src/shared/types";
 
@@ -30,6 +30,8 @@ export class ApiError extends Error {
 
 export async function api<T>(path: string, init: { method?: string; body?: unknown; form?: FormData } = {}): Promise<T> {
   const method = init.method ?? "GET";
+  // Logging out empties the view cache first, whatever the server answers.
+  if (path === "/api/auth/logout") clearViewCache();
   const headers: Record<string, string> = {};
   if (method !== "GET" && csrfToken) headers["x-csrf-token"] = csrfToken;
   let body: BodyInit | undefined;
@@ -40,14 +42,68 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
   }
   const res = await fetch(path, { method, headers, body, credentials: "same-origin" });
   const data = (await res.json().catch(() => ({}))) as { error?: string };
-  if (res.status === 401 && path !== "/api/auth/login") unauthorizedListeners.forEach((fn) => fn());
+  if (res.status === 401 && path !== "/api/auth/login") {
+    clearViewCache();
+    unauthorizedListeners.forEach((fn) => fn());
+  }
   if (!res.ok) throw new ApiError(res.status, data.error ?? `Fehler ${res.status}`);
+  // A change can show on every view: fetch everything cached again, in the background.
+  if (method !== "GET" && !path.startsWith("/api/auth/")) refreshViewCache();
   return data as T;
 }
 
-/** Loads data for a view. `reload` re-fetches without clearing what is shown. */
+// ---------------------------------------------------------------- view cache
+
+/**
+ * What each GET path last returned, for this session. A view opened before shows it at once and fetches the
+ * fresh answer in the background, instead of starting from a loading placeholder every time. After any change
+ * every cached path is fetched again, so a view shows the change as soon as it appears. Logging out or a 401
+ * empties the cache; answers still on their way from before are dropped (`generation`).
+ */
+const viewCache = new Map<string, unknown>();
+const cacheListeners = new Set<() => void>();
+let generation = 0;
+
+function subscribeViewCache(fn: () => void) {
+  cacheListeners.add(fn);
+  return () => {
+    cacheListeners.delete(fn);
+  };
+}
+
+function writeViewCache(path: string, data: unknown, since: number) {
+  if (since !== generation) return;
+  // An unchanged answer keeps the cached object, so views neither re-render nor re-run effects that depend on it.
+  if (viewCache.has(path) && JSON.stringify(viewCache.get(path)) === JSON.stringify(data)) return;
+  viewCache.set(path, data);
+  cacheListeners.forEach((fn) => fn());
+}
+
+export function clearViewCache() {
+  generation += 1;
+  viewCache.clear();
+  cacheListeners.forEach((fn) => fn());
+}
+
+function refreshViewCache() {
+  const since = generation;
+  for (const path of [...viewCache.keys()]) {
+    api(path).then(
+      (d) => writeViewCache(path, d, since),
+      () => {},
+    );
+  }
+}
+
+/**
+ * Loads data for a view. A path loaded before in this session is there at once and refreshes in the
+ * background (see the view cache above). `reload` re-fetches without clearing what is shown, and a new path
+ * keeps the previous data on screen until its own answer is there.
+ */
 export function useApi<T>(path: string | null) {
-  const [data, setData] = useState<T | null>(null);
+  const cached = useSyncExternalStore(subscribeViewCache, () => (path === null ? undefined : viewCache.get(path))) as T | undefined;
+  const shown = useRef<T | null>(null);
+  if (cached !== undefined) shown.current = cached;
   const [error, setError] = useState<string | null>(null);
   /** HTTP status of the last error; 0 for network errors. */
   const [errorStatus, setErrorStatus] = useState<number | null>(null);
@@ -56,9 +112,16 @@ export function useApi<T>(path: string | null) {
   useEffect(() => {
     if (!path) return;
     let alive = true;
+    const since = generation;
     setLoading(true);
     api<T>(path)
-      .then((d) => alive && (setData(d), setError(null), setErrorStatus(null)))
+      .then((d) => {
+        writeViewCache(path, d, since);
+        if (alive) {
+          setError(null);
+          setErrorStatus(null);
+        }
+      })
       .catch((e: Error) => alive && (setError(e.message), setErrorStatus(e instanceof ApiError ? e.status : 0)))
       .finally(() => alive && setLoading(false));
     return () => {
@@ -66,7 +129,7 @@ export function useApi<T>(path: string | null) {
     };
   }, [path, tick]);
   const reload = useCallback(() => setTick((t) => t + 1), []);
-  return { data, error, errorStatus, loading, reload };
+  return { data: cached ?? shown.current, error, errorStatus, loading, reload };
 }
 
 // ---------------------------------------------------------------- router
