@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and build
+        run: npm run build
+      - name: Unit, integration and security tests
+        run: npm test
+      - name: Eval (mock mode, pipeline test)
+        run: npm run eval
+      - name: Fixtures are reproducible
+        run: |
+          npx playwright install --with-deps chromium
+          npm run fixtures
+          git diff --exit-code -- fixtures/model/responses.json fixtures/expected.json fixtures/contracts fixtures/mails
+      - name: End-to-end tests (headless Chromium)
+        run: npm run test:e2e
+      - name: No leftover test code
+        run: "! grep -rn \"TEST\"\"CODE\" --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.git ."
