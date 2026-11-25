@@ -1,0 +1,333 @@
+{
+  "name": "Posteingang-Assistent: Eingang, Freigabe, Versand",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "inbox-assistant/new-mail",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "a1f0c6c2-0001-4b0e-9d6a-000000000001",
+      "name": "Neue Mail",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "5b3f8c1e-7d2a-4e44-9a51-6f0e2c9b1a01",
+      "credentials": {
+        "httpHeaderAuth": { "id": "inboxIngressToken1", "name": "Posteingang: Einlieferungs-Token" }
+      },
+      "notes": "Ein Mail-Relay oder IMAP-Abruf liefert die Rohmail als eml_base64. Header-Token als n8n-Credential."
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            { "id": "s1-url", "name": "assistant_url", "value": "http://127.0.0.1:3220", "type": "string" },
+            { "id": "s1-ts", "name": "ts", "value": "={{ Math.floor(Date.now() / 1000).toString() }}", "type": "string" },
+            {
+              "id": "s1-body",
+              "name": "body",
+              "value": "={{ JSON.stringify({ eml_base64: $json.body.eml_base64, resume_url: $execution.resumeUrl }) }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "a1f0c6c2-0002-4b0e-9d6a-000000000002",
+      "name": "Eingang vorbereiten",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [220, 300],
+      "notes": "assistant_url ist die einzige Einstellung. Die Resume-URL dieser Ausführung geht mit, damit die Freigabe den Ablauf fortsetzen kann."
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $json.ts }}.POST./api/hooks/ingest.{{ $json.body }}",
+        "dataPropertyName": "signature",
+        "encoding": "hex"
+      },
+      "id": "a1f0c6c2-0003-4b0e-9d6a-000000000003",
+      "name": "Eingang signieren",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [440, 300],
+      "credentials": {
+        "crypto": { "id": "inboxWebhookHmac1", "name": "Posteingang: Webhook-Geheimnis" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.assistant_url }}/api/hooks/ingest",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-inbox-timestamp", "value": "={{ $json.ts }}" },
+            { "name": "x-inbox-signature", "value": "={{ $json.signature }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": { "timeout": 120000 }
+      },
+      "id": "a1f0c6c2-0004-4b0e-9d6a-000000000004",
+      "name": "An Assistent übergeben",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 300],
+      "notes": "Der Assistent ordnet ein, liest Belege aus, rechnet nach und entwirft Antworten. Er sendet nichts."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "c1-approval",
+              "leftValue": "={{ $json.needs_approval }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1f0c6c2-0005-4b0e-9d6a-000000000005",
+      "name": "Antwort nötig?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {},
+      "id": "a1f0c6c2-0006-4b0e-9d6a-000000000006",
+      "name": "Fertig: abgelegt oder Prüfliste",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1100, 460]
+    },
+    {
+      "parameters": {
+        "resume": "webhook",
+        "httpMethod": "POST",
+        "limitWaitTime": true,
+        "limitType": "afterTimeInterval",
+        "resumeAmount": 7,
+        "resumeUnit": "days",
+        "options": {}
+      },
+      "id": "a1f0c6c2-0007-4b0e-9d6a-000000000007",
+      "name": "Auf Freigabe warten",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1100, 200],
+      "webhookId": "9d7e2f40-3c1b-4b6e-8f2a-1e5d7c9a0b02",
+      "notes": "Läuft weiter, wenn der Inhaber im Assistenten freigibt oder verwirft. Der Aufruf selbst trägt keine Daten: was gesendet wird, holt der nächste Schritt signiert beim Assistenten ab."
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            { "id": "s2-url", "name": "assistant_url", "value": "={{ $('Eingang vorbereiten').first().json.assistant_url }}", "type": "string" },
+            { "id": "s2-ts", "name": "ts", "value": "={{ Math.floor(Date.now() / 1000).toString() }}", "type": "string" },
+            { "id": "s2-path", "name": "path", "value": "=/api/hooks/outbox/{{ $('An Assistent übergeben').first().json.mail_id }}", "type": "string" }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "a1f0c6c2-0008-4b0e-9d6a-000000000008",
+      "name": "Abruf vorbereiten",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1320, 200]
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $json.ts }}.GET.{{ $json.path }}.",
+        "dataPropertyName": "signature",
+        "encoding": "hex"
+      },
+      "id": "a1f0c6c2-0009-4b0e-9d6a-000000000009",
+      "name": "Abruf signieren",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [1540, 200],
+      "credentials": {
+        "crypto": { "id": "inboxWebhookHmac1", "name": "Posteingang: Webhook-Geheimnis" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.assistant_url }}{{ $json.path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-inbox-timestamp", "value": "={{ $json.ts }}" },
+            { "name": "x-inbox-signature", "value": "={{ $json.signature }}" }
+          ]
+        },
+        "options": { "response": { "response": { "fullResponse": true, "neverError": true } } }
+      },
+      "id": "a1f0c6c2-0010-4b0e-9d6a-000000000010",
+      "name": "Freigabe abholen",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 200],
+      "notes": "Liefert Empfänger, Betreff und Text nur, wenn der Entwurf freigegeben und noch nicht versendet ist (sonst 409)."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "conditions": [
+            {
+              "id": "c2-approved",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": { "type": "number", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1f0c6c2-0011-4b0e-9d6a-000000000011",
+      "name": "Freigegeben?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1980, 200]
+    },
+    {
+      "parameters": {},
+      "id": "a1f0c6c2-0012-4b0e-9d6a-000000000012",
+      "name": "Fertig: verworfen",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [2200, 360]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.body.from }}",
+        "toEmail": "={{ $json.body.to }}",
+        "subject": "={{ $json.body.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.body.body }}",
+        "options": { "appendAttribution": false }
+      },
+      "id": "a1f0c6c2-0013-4b0e-9d6a-000000000013",
+      "name": "Antwort senden",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [2200, 100],
+      "credentials": {
+        "smtp": { "id": "inboxTestSmtp00001", "name": "Posteingang: Test-SMTP" }
+      },
+      "notes": "Im Test geht die Mail an einen lokalen SMTP-Empfänger (npm run smtp-sink), der sie nur in eine Datei schreibt."
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            { "id": "s3-url", "name": "assistant_url", "value": "={{ $('Abruf vorbereiten').first().json.assistant_url }}", "type": "string" },
+            { "id": "s3-ts", "name": "ts", "value": "={{ Math.floor(Date.now() / 1000).toString() }}", "type": "string" },
+            { "id": "s3-path", "name": "path", "value": "={{ $('Abruf vorbereiten').first().json.path }}/delivered", "type": "string" },
+            { "id": "s3-body", "name": "body", "value": "{}", "type": "string" }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "a1f0c6c2-0014-4b0e-9d6a-000000000014",
+      "name": "Meldung vorbereiten",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [2420, 100]
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $json.ts }}.POST.{{ $json.path }}.{{ $json.body }}",
+        "dataPropertyName": "signature",
+        "encoding": "hex"
+      },
+      "id": "a1f0c6c2-0015-4b0e-9d6a-000000000015",
+      "name": "Meldung signieren",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 2,
+      "position": [2640, 100],
+      "credentials": {
+        "crypto": { "id": "inboxWebhookHmac1", "name": "Posteingang: Webhook-Geheimnis" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.assistant_url }}{{ $json.path }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-inbox-timestamp", "value": "={{ $json.ts }}" },
+            { "name": "x-inbox-signature", "value": "={{ $json.signature }}" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "a1f0c6c2-0016-4b0e-9d6a-000000000016",
+      "name": "Zustellung melden",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2860, 100]
+    }
+  ],
+  "connections": {
+    "Neue Mail": { "main": [[{ "node": "Eingang vorbereiten", "type": "main", "index": 0 }]] },
+    "Eingang vorbereiten": { "main": [[{ "node": "Eingang signieren", "type": "main", "index": 0 }]] },
+    "Eingang signieren": { "main": [[{ "node": "An Assistent übergeben", "type": "main", "index": 0 }]] },
+    "An Assistent übergeben": { "main": [[{ "node": "Antwort nötig?", "type": "main", "index": 0 }]] },
+    "Antwort nötig?": {
+      "main": [
+        [{ "node": "Auf Freigabe warten", "type": "main", "index": 0 }],
+        [{ "node": "Fertig: abgelegt oder Prüfliste", "type": "main", "index": 0 }]
+      ]
+    },
+    "Auf Freigabe warten": { "main": [[{ "node": "Abruf vorbereiten", "type": "main", "index": 0 }]] },
+    "Abruf vorbereiten": { "main": [[{ "node": "Abruf signieren", "type": "main", "index": 0 }]] },
+    "Abruf signieren": { "main": [[{ "node": "Freigabe abholen", "type": "main", "index": 0 }]] },
+    "Freigabe abholen": { "main": [[{ "node": "Freigegeben?", "type": "main", "index": 0 }]] },
+    "Freigegeben?": {
+      "main": [
+        [{ "node": "Antwort senden", "type": "main", "index": 0 }],
+        [{ "node": "Fertig: verworfen", "type": "main", "index": 0 }]
+      ]
+    },
+    "Antwort senden": { "main": [[{ "node": "Meldung vorbereiten", "type": "main", "index": 0 }]] },
+    "Meldung vorbereiten": { "main": [[{ "node": "Meldung signieren", "type": "main", "index": 0 }]] },
+    "Meldung signieren": { "main": [[{ "node": "Zustellung melden", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1", "saveDataSuccessExecution": "none", "saveManualExecutions": false },
+  "pinData": {},
+  "active": false,
+  "id": "inboxAssistantFlow1",
+  "tags": []
+}
