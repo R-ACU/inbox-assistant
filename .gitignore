@@ -1,0 +1,17 @@
+node_modules/
+dist/
+data/
+coverage/
+test-results/
+playwright-report/
+eval-results/
+.n8n/
+docs/review/
+.env
+.env.*
+!.env.example
+*.log
+# internal agent notes, never part of the public repo
+AGENTS.md
+CLAUDE.md
+TODO.md
