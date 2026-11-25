@@ -7,7 +7,7 @@
  *
  * Usage: npm run fixtures
  */
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import MailComposer from "nodemailer/lib/mail-composer";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
@@ -155,22 +155,32 @@ async function scanPdf(spec: InvoiceSpec): Promise<Uint8Array> {
       <table style="margin-top:40px;width:100%;font-size:15px">${rows}</table>
       <div style="margin-top:30px;text-align:right">Netto ${eur(printed.net)}<br>USt ${eur(printed.tax)}<br><b>Gesamt ${eur(printed.gross)}</b></div>
     </div></body></html>`;
-  const browser = await chromium.launch({ headless: true });
-  try {
-    const page = await browser.newPage({ viewport: { width: 794, height: 1123 } });
-    await page.setContent(html);
-    const png = await page.screenshot({ type: "png" });
-    const doc = await PDFDocument.create();
-    doc.setProducer("inbox-assistant test fixtures (scan)");
-    doc.setCreationDate(FIXED_DATE);
-    doc.setModificationDate(FIXED_DATE);
-    const image = await doc.embedPng(png);
-    const pdfPage = doc.addPage([595.28, 841.89]);
-    pdfPage.drawImage(image, { x: 0, y: 0, width: 595.28, height: 841.89 });
-    return doc.save({ useObjectStreams: false });
-  } finally {
-    await browser.close();
+  // The browser draws fonts differently on every OS, so the scan is rendered
+  // once and kept as a binary fixture; delete the PNG to render it again.
+  const pngPath = join(ROOT, "scans", spec.filename.replace(/\.pdf$/i, ".png"));
+  let png: Uint8Array;
+  if (existsSync(pngPath)) {
+    png = readFileSync(pngPath);
+  } else {
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage({ viewport: { width: 794, height: 1123 } });
+      await page.setContent(html);
+      png = await page.screenshot({ type: "png" });
+    } finally {
+      await browser.close();
+    }
+    mkdirSync(join(ROOT, "scans"), { recursive: true });
+    writeFileSync(pngPath, png);
   }
+  const doc = await PDFDocument.create();
+  doc.setProducer("inbox-assistant test fixtures (scan)");
+  doc.setCreationDate(FIXED_DATE);
+  doc.setModificationDate(FIXED_DATE);
+  const image = await doc.embedPng(png);
+  const pdfPage = doc.addPage([595.28, 841.89]);
+  pdfPage.drawImage(image, { x: 0, y: 0, width: 595.28, height: 841.89 });
+  return doc.save({ useObjectStreams: false });
 }
 
 function contractTcv(d: ContractPairSpec["quote"]): number {
