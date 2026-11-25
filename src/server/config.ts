@@ -24,6 +24,15 @@ const EnvSchema = z
     MOCK_RESPONSES: z.string().default("./fixtures/model/responses.json"),
     CONTRACT_SAMPLES_DIR: z.string().default("./fixtures/contracts"),
     N8N_BASE_URL: z.string().url().optional(),
+    // Only behind a reverse proxy on the same machine: the proxy addresses whose
+    // X-Forwarded-For is believed, e.g. "127.0.0.1". Unset = trust nobody.
+    TRUST_PROXY: z.preprocess(
+      (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+      z
+        .string()
+        .regex(/^\s*[\d.:a-fA-F]+(\/\d{1,3})?\s*(,\s*[\d.:a-fA-F]+(\/\d{1,3})?\s*)*$/, "comma-separated IP addresses or CIDR ranges")
+        .optional(),
+    ),
   })
   .superRefine((env, ctx) => {
     if (env.LLM_MODE === "claude" && !env.ANTHROPIC_API_KEY) {
@@ -46,6 +55,8 @@ export interface AppConfig {
   mockResponses: string;
   contractSamplesDir: string;
   n8nBaseUrl: string | null;
+  /** Proxy addresses allowed to set the client IP (rate limits key on it); false = none. */
+  trustProxy: string[] | false;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -70,5 +81,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     mockResponses: resolve(e.MOCK_RESPONSES),
     contractSamplesDir: resolve(e.CONTRACT_SAMPLES_DIR),
     n8nBaseUrl: e.N8N_BASE_URL ?? null,
+    trustProxy: e.TRUST_PROXY ? e.TRUST_PROXY.split(",").map((p) => p.trim()) : false,
   };
 }

@@ -88,6 +88,15 @@ describe("configuration", () => {
     expect(() => loadConfig({ APP_PASSWORD_HASH: passwordHash, INBOX_WEBHOOK_SECRET: "short" })).toThrow(/INBOX_WEBHOOK_SECRET/);
     expect(() => loadConfig({ APP_PASSWORD_HASH: passwordHash, INBOX_WEBHOOK_SECRET: SECRET, LLM_MODE: "claude" })).toThrow(/ANTHROPIC_API_KEY/);
   });
+
+  it("trusts no proxy unless TRUST_PROXY names one", () => {
+    const base = { APP_PASSWORD_HASH: passwordHash, INBOX_WEBHOOK_SECRET: SECRET };
+    expect(loadConfig(base).trustProxy).toBe(false);
+    expect(loadConfig({ ...base, TRUST_PROXY: "" }).trustProxy).toBe(false);
+    expect(loadConfig({ ...base, TRUST_PROXY: "127.0.0.1, ::1" }).trustProxy).toEqual(["127.0.0.1", "::1"]);
+    expect(() => loadConfig({ ...base, TRUST_PROXY: "true" })).toThrow(/TRUST_PROXY/);
+    expect(() => loadConfig({ ...base, TRUST_PROXY: "*" })).toThrow(/TRUST_PROXY/);
+  });
 });
 
 describe("login and session", () => {
@@ -120,6 +129,30 @@ describe("login and session", () => {
     }
     expect(codes.slice(0, 5)).toEqual([401, 401, 401, 401, 401]);
     expect(codes.slice(5)).toEqual([429, 429]);
+  });
+
+  it("ignores a forged X-Forwarded-For when no proxy is trusted", async () => {
+    const codes: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      const headers = { origin: ORIGIN, "x-forwarded-for": `203.0.113.${i + 1}` };
+      codes.push((await ctx.app.inject({ method: "POST", url: "/api/auth/login", headers, payload: { password: "falsch" } })).statusCode);
+    }
+    expect(codes.at(-1)).toBe(429);
+  });
+
+  it("behind a trusted proxy, rate-limits each client on its own", async () => {
+    const config = { ...ctx.config, trustProxy: ["127.0.0.1"] };
+    const service = new InboxService({ config, store: ctx.store, llm: mockProvider(), tenant: TENANT, now: () => NOW, fetch: ctx.fetchMock as unknown as typeof fetch });
+    const app = await buildApp({ config, store: ctx.store, service, now: () => NOW, webRoot: join(ctx.dir, "no-web") });
+    try {
+      const attempt = (ip: string) =>
+        app.inject({ method: "POST", url: "/api/auth/login", remoteAddress: "127.0.0.1", headers: { origin: ORIGIN, "x-forwarded-for": ip }, payload: { password: "falsch" } });
+      for (let i = 0; i < 5; i++) expect((await attempt("203.0.113.7")).statusCode).toBe(401);
+      expect((await attempt("203.0.113.7")).statusCode).toBe(429);
+      expect((await attempt("198.51.100.20")).statusCode).toBe(401);
+    } finally {
+      await app.close();
+    }
   });
 
   it("logs out and invalidates the session", async () => {

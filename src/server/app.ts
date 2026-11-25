@@ -79,7 +79,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger: deps.logger ? { level: "info", redact: ["req.headers.cookie", `req.headers["${SIGNATURE_HEADER}"]`] } : false,
     bodyLimit: 1024 * 1024,
-    trustProxy: false,
+    trustProxy: config.trustProxy,
   });
 
   app.decorateRequest("session", null);
