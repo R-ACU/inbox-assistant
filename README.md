@@ -49,26 +49,27 @@ n8n Wait node  ◄── owner clicks "Senden" in the approval UI (login + CSRF)
 
 ## Result
 
-Measured on this repository, on a laptop, in mock mode unless stated otherwise:
+Measured on this repository, on a laptop:
 
 | What | Result |
 | :--- | :--- |
-| Unit, integration and security tests (Vitest), including regression tests for every finding of a security review and WCAG contrast checks for every accent in light and dark mode | **316 passed** |
+| Unit, integration and security tests (Vitest), including regression tests for every finding of a security review and WCAG contrast checks for every accent in light and dark mode | **322 passed** |
 | End-to-end tests in headless Chromium (Playwright), including one test per accent and mode (10) that measures the contrast of every visible text in nineteen views, regression tests for fast back and forward between the tabs and for numbers that count up only once, and tests that a view opened before comes back at once with its data (no placeholder, no replayed entrance), shows a change made elsewhere, and is not shown from a cache after logging out | **39 passed** |
-| Pipeline test over the 20-mail test set (`npm run eval`, mock answers) | routing **20 / 20**, traps caught **4 / 4**, sent without approval **0** |
+| Eval over the 20-mail test set against the real Claude API (`LLM_MODE=claude npm run eval`, Haiku 5.5 sorts, Sonnet 5.5 reads invoices and drafts), 25 Nov 2026 | sorting **20 / 20**, routing **20 / 20**, traps caught **4 / 4**, invoice fields read correctly **63 / 63**, sent without approval **0**; 72,938 tokens in, 9,995 out, about **0.19 USD** for the whole run |
+| Same test set in mock mode (`npm run eval`, fixed answers, runs in CI) | routing **20 / 20**, traps caught **4 / 4**, sent without approval **0** |
 | n8n 2.49.5, local: import, publish, one full run (`npm run n8n -- demo`) | execution status **success**: webhook, signed hand-over, wait, approval, signed fetch, SMTP delivery, signed confirmation, 1 mail in the test SMTP server. Re-run after the hardening of the workflow settings and the n8n process environment |
 | n8n webhook without or with a wrong token, resume URL without n8n's signature | rejected (403, 403, 401) |
 
 **What the mock numbers mean.** In mock mode the "model" answers come from fixtures, so sorting and field accuracy are 100 % by construction. The run proves that the pipeline routes, checks and blocks correctly: the wrong total is found by code, the unreadable scan goes to review, the hidden instruction is quarantined, the invented "25 %" surcharge in a draft is flagged.
 
-**The real accuracy has not been measured yet.** It needs the Claude API:
+**What the real run means.** One run against the live API, on the same 20 mails: every mail sorted and routed right, all four traps caught (wrong total, unreadable scan, spam, hidden instruction), all 63 invoice fields read correctly (7 fields on 9 readable invoices), nothing sent without approval. One case differs from the expected outcome in a harmless way: for m16 the mock draft contains an invented fact on purpose so the check can flag it; the real model did not invent one, so there was nothing to flag. Twenty mails are a small set, so this shows the pipeline works with the real model, not a general accuracy figure. To repeat it:
 
 ```bash
-# in .env: LLM_MODE=claude and ANTHROPIC_API_KEY=...
+# in .env: ANTHROPIC_API_KEY=...
 LLM_MODE=claude npm run eval
 ```
 
-This writes `eval-results/<timestamp>-claude.{md,json}` with sorting accuracy, routing accuracy, traps caught, invoice fields read correctly (7 fields on 9 readable invoices), tokens and estimated cost. Minutes per invoice by hand versus automatic are not measured either.
+This writes `eval-results/<timestamp>-claude.{md,json}` with all numbers, tokens and estimated cost. The public demo stays in mock mode, so visitors never call the API. Minutes per invoice by hand versus automatic are not measured.
 
 ### The test set
 
@@ -204,7 +205,7 @@ More: [DECISIONS.md](DECISIONS.md) (why it is built this way, what the model may
 
 **Ablauf:** n8n nimmt die Mail an und übergibt sie signiert an den Assistenten. Feste Regeln prüfen auf Anweisungen im Text, Zahlungsdruck, neue Bankverbindungen und gefälschte Absender. Claude Haiku ordnet ein, Claude Sonnet liest Rechnungs-PDFs und entwirft Antworten aus der FAQ. Der Code rechnet jede Summe in Cent nach, prüft IBAN, Absenderdomain, unbekannte und ähnlich klingende Lieferanten sowie Dubletten und kontrolliert jede Zahl im Entwurf. Unstimmiges landet in der Prüfliste, Verdächtiges in Quarantäne. Auf jede nicht verdächtige Mail kann der Inhaber mit „Antwort entwerfen“ selbst eine Antwort anfordern (etwa an den Lieferanten mit der falschen Summe); sie wird genauso geprüft, ist bearbeitbar und geht über dieselbe Freigabe raus, die Mail behält ihren Status. Antworten gehen erst raus, wenn der Inhaber in der Freigabe-Oberfläche auf „Senden“ klickt; dann setzt n8n den wartenden Ablauf fort, holt den freigegebenen Text signiert ab und verschickt ihn. Zweiter Modus: Bestellformular gegen Angebot abgleichen, Abweichungen als englische Notiz.
 
-**Ergebnis:** 316 Unit-, Integrations- und Sicherheitstests (mit Regressionstests für jeden Befund einer Sicherheitsprüfung und Kontrastprüfung jeder Akzentfarbe in Hell und Dunkel) und 33 End-to-End-Tests grün. Der Pipeline-Test über 20 Testmails (Mock) leitet 20 von 20 richtig weiter, fängt 4 von 4 Fallen und sendet 0 Mails ohne Freigabe. n8n 2.49.5 lief lokal einen kompletten Durchgang erfolgreich (auch nach der Härtung erneut), falsche Tokens und unsignierte Aufrufe wurden abgewiesen. Die echte Trefferquote des Modells ist noch nicht gemessen; Befehl dafür: `LLM_MODE=claude npm run eval`.
+**Ergebnis:** 322 Unit-, Integrations- und Sicherheitstests (mit Regressionstests für jeden Befund einer Sicherheitsprüfung und Kontrastprüfung jeder Akzentfarbe in Hell und Dunkel) und 39 End-to-End-Tests grün. Ein Lauf gegen die echte Claude-API über 20 Testmails (25.11.2026): 20 von 20 richtig eingeordnet und weitergeleitet, 4 von 4 Fallen erkannt, 63 von 63 Rechnungsfeldern richtig gelesen, 0 Mails ohne Freigabe, Kosten rund 0,19 USD. n8n 2.49.5 lief lokal einen kompletten Durchgang erfolgreich (auch nach der Härtung erneut), falsche Tokens und unsignierte Aufrufe wurden abgewiesen. Die öffentliche Demo läuft im Testmodus mit festen Antworten, damit Besucher keine API-Kosten auslösen.
 
 **Look:** modernes, gerundetes Dashboard im Bento-Raster mit dunkler Hero-Karte, Pillen-Balken, Ring-Anzeige und Animationen bei jeder Aktion, auf einen Blick lesbar: Absender als Avatare oder Branchen-Icons, Claude und n8n mit ihren Logos, die Woche als Kalender, wenig Text. Freigabe, Prüfen und alle Mails sind Reiter eines Posteingangs mit einem Lesebereich; Standard hell, per Mond-Knopf dunkel (tiefes Schwarz, wird gespeichert). Schrift Allo, selbst gehostet. Per Link `?firma=netzhandwerker`, `provipanda`, `wagemann` oder `elation` wechselt nur die Akzentfarbe (Navy, Violett, Petrol, Navy mit Himmelblau), ohne Logos, Bilder oder Texte der Firmen; ohne Parameter gilt ein neutrales Blau. Kontrast WCAG AA ist für jede Akzentfarbe in Hell und Dunkel geprüft.
 
