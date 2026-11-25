@@ -76,8 +76,10 @@ test("a view opened before is back at once, without a placeholder and without re
 test("a reply sent in the mailbox shows on the overview opened before, without loading it again", async ({ page }) => {
   await page.goto("/");
   const waiting = page.locator('main a[href="/freigabe"]').filter({ hasText: "Freigabe" }).locator(".tnum");
-  await expect(waiting).toBeVisible();
-  const before = Number(await waiting.textContent());
+  // The number counts up on the first view; read the target from the API and wait until it is shown,
+  // instead of reading a value in the middle of the count (that made this test flaky on slow runners).
+  const before = ((await (await page.request.get("/api/overview")).json()) as { awaitingApproval: number }).awaitingApproval;
+  await expect(waiting).toHaveText(String(before));
 
   await nav(page, "Posteingang").click();
   const list = page.getByRole("list", { name: "Freigabe", exact: true });
