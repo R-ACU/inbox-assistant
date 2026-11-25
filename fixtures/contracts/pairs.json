@@ -1,0 +1,23 @@
+[
+  {
+    "id": "riverside",
+    "title": "Riverside Family Practice",
+    "quote": "riverside-quote.pdf",
+    "order": "riverside-order-form.pdf",
+    "expectedDiscrepancies": 0
+  },
+  {
+    "id": "northgate",
+    "title": "Northgate Pediatrics Group",
+    "quote": "northgate-quote.pdf",
+    "order": "northgate-order-form.pdf",
+    "expectedDiscrepancies": 6
+  },
+  {
+    "id": "lakeside",
+    "title": "Lakeside Women's Health",
+    "quote": "lakeside-quote.pdf",
+    "order": "lakeside-order-form.pdf",
+    "expectedDiscrepancies": 5
+  }
+]
