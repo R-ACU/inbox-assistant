@@ -1,4 +1,5 @@
 /** Weekly summary, computed from stored records. Pure function, no I/O. */
+import { pick, type Locale } from "../shared/locale";
 import { CATEGORIES, type Category } from "../shared/schemas";
 import type { ProcessedMail, WeeklySummary } from "../shared/types";
 import { findSupplier } from "./invoice-check";
@@ -7,17 +8,18 @@ import { replySent, settledStatus } from "./reply";
 import type { KnownSupplier } from "./invoice-check";
 
 const DAY = 86_400_000;
-const TIME_ZONE = "Europe/Berlin";
-const localDayFormat = new Intl.DateTimeFormat("en-CA", {
-  timeZone: TIME_ZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
+/** The German tenant's wall clock; the English tenant passes its own (TenantProfile.timeZone). */
+export const DEFAULT_TIME_ZONE = "Europe/Berlin";
+const dayFormats = new Map<string, Intl.DateTimeFormat>();
 
 /** Calendar day (YYYY-MM-DD) of a timestamp in the business's time zone. */
-export function localDate(iso: string): string {
-  return localDayFormat.format(new Date(iso));
+export function localDate(iso: string, timeZone = DEFAULT_TIME_ZONE): string {
+  let format = dayFormats.get(timeZone);
+  if (!format) {
+    format = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+    dayFormats.set(timeZone, format);
+  }
+  return format.format(new Date(iso));
 }
 
 function utcDate(iso: string): Date {
@@ -43,12 +45,14 @@ export function buildWeeklySummary(
   records: ProcessedMail[],
   weekStart: string,
   suppliers: KnownSupplier[],
+  opts: { timeZone?: string; locale?: Locale } = {},
 ): WeeklySummary {
+  const tz = opts.timeZone ?? DEFAULT_TIME_ZONE;
   const start = utcDate(weekStart).getTime();
   const end = start + 7 * DAY;
   const lastDay = new Date(end - DAY).toISOString().slice(0, 10);
   const inWeek = records.filter((r) => {
-    const day = localDate(r.mail.date);
+    const day = localDate(r.mail.date, tz);
     return day >= weekStart && day <= lastDay;
   });
 
@@ -72,7 +76,7 @@ export function buildWeeklySummary(
 
   const byDay = Array.from({ length: 7 }, (_, i) => {
     const date = new Date(start + i * DAY).toISOString().slice(0, 10);
-    const list = inWeek.filter((r) => localDate(r.mail.date) === date);
+    const list = inWeek.filter((r) => localDate(r.mail.date, tz) === date);
     const byCat = Object.fromEntries(CATEGORIES.map((c) => [c, 0])) as Record<Category, number>;
     for (const r of list) byCat[r.category] += 1;
     return { date, count: list.length, byCategory: byCat };
@@ -88,10 +92,10 @@ export function buildWeeklySummary(
       status: r.status,
       reason:
         r.status === "awaiting_approval"
-          ? "Antwortentwurf wartet auf Freigabe"
+          ? pick(opts.locale, "Antwortentwurf wartet auf Freigabe", "Reply draft awaiting approval")
           : r.status === "delivery_failed"
-            ? "Freigegebene Antwort konnte nicht versendet werden"
-            : (r.reviewReasons.find((f) => f.severity === "error") ?? r.reviewReasons[0])?.message ?? "Bitte prüfen",
+            ? pick(opts.locale, "Freigegebene Antwort konnte nicht versendet werden", "Approved reply could not be sent")
+            : (r.reviewReasons.find((f) => f.severity === "error") ?? r.reviewReasons[0])?.message ?? pick(opts.locale, "Bitte prüfen", "Please check"),
     }));
 
   return {

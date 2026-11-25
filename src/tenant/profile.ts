@@ -1,12 +1,20 @@
 /**
- * The demo business. Everything here is invented: company, people, suppliers,
+ * The German demo business. Everything here is invented: company, people, suppliers,
  * bank accounts. Domains use the reserved `.example` TLD (RFC 2606).
+ * The English deployment runs an Irish business instead: ./profile-en.ts.
  */
 import type { FaqEntry } from "../core/draft-check";
 import { germanIban } from "../core/iban";
 import type { KnownSupplier } from "../core/invoice-check";
+import type { Locale } from "../shared/locale";
 
 export interface TenantProfile {
+  /** Language of everything the owner reads: UI, check results, audit trail, model drafts. */
+  locale: Locale;
+  /** Wall clock of the business, for days and hours on the overview and the week. */
+  timeZone: string;
+  /** VAT rates that may appear on a supplier invoice; any other rate goes to review. */
+  taxRates: number[];
   company: string;
   owner: string;
   mailbox: string;
@@ -84,6 +92,9 @@ export const FAQ: FaqEntry[] = [
 ];
 
 export const TENANT: TenantProfile = {
+  locale: "de",
+  timeZone: "Europe/Berlin",
+  taxRates: [0, 7, 19],
   company: "Malerbetrieb Hofmann & Kraft GmbH",
   owner: "Jonas Hofmann",
   mailbox: "info@hofmann-kraft.example",

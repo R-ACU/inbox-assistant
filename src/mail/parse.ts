@@ -2,6 +2,7 @@
  * Parses a raw RFC 822 message (.eml) into an InboundMail.
  * HTML bodies are converted to plain text here; HTML is never stored for display.
  */
+import { pick, type Locale } from "../shared/locale";
 import { createHash } from "node:crypto";
 import { simpleParser, type AddressObject } from "mailparser";
 import { ATTACHMENT_LIMITS, inspectAttachment, safeFilename } from "../core/attachments";
@@ -56,7 +57,7 @@ export function parseAuthResults(headerLines: readonly { key: string; line: stri
 
 const MEDIA: Record<string, DocumentMediaType> = { pdf: "application/pdf", png: "image/png", jpeg: "image/jpeg" };
 
-export async function parseEml(raw: Buffer): Promise<ParsedMail> {
+export async function parseEml(raw: Buffer, locale: Locale = "de"): Promise<ParsedMail> {
   if (raw.byteLength > MAX_EML_BYTES) throw new Error("Mail ist größer als 15 MB.");
   const parsed = await simpleParser(raw, { skipImageLinks: true, skipTextToHtml: true, skipTextLinks: true });
 
@@ -74,11 +75,11 @@ export async function parseEml(raw: Buffer): Promise<ParsedMail> {
     const filename = safeFilename(att.filename);
     const content = att.content;
     totalBytes += content.byteLength;
-    let verdict = inspectAttachment({ filename, contentType: att.contentType, content });
+    let verdict = inspectAttachment({ filename, contentType: att.contentType, content }, locale);
     if (verdict.accepted && index >= ATTACHMENT_LIMITS.maxCount) {
-      verdict = { accepted: false, kind: verdict.kind, reason: "Zu viele Anhänge." };
+      verdict = { accepted: false, kind: verdict.kind, reason: pick(locale, "Zu viele Anhänge.", "Too many attachments.") };
     } else if (verdict.accepted && totalBytes > ATTACHMENT_LIMITS.maxTotalBytes) {
-      verdict = { accepted: false, kind: verdict.kind, reason: "Anhänge zusammen größer als 10 MB." };
+      verdict = { accepted: false, kind: verdict.kind, reason: pick(locale, "Anhänge zusammen größer als 10 MB.", "Attachments larger than 10 MB together.") };
     }
     attachments.push({
       index,

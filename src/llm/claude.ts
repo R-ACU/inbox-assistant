@@ -15,17 +15,15 @@ import {
   InvoiceExtractionSchema,
   ReplyDraftSchema,
 } from "../shared/schemas";
+import { pick, type Locale } from "../shared/locale";
 import type { InboundMail } from "../shared/types";
 import {
-  CLASSIFY_SYSTEM,
-  CONTRACT_SYSTEM,
-  DRAFT_SYSTEM,
-  INVOICE_SYSTEM,
-  REPLY_ON_REQUEST_SYSTEM,
   escapeUntrusted,
   faqBlock,
   mailBlock,
   notesBlock,
+  promptsFor,
+  type PromptSet,
 } from "./prompts";
 import type { DocumentInput, DraftInput, LlmProvider, ModelCall, ModelConfig } from "./provider";
 import { DEFAULT_MODELS } from "./provider";
@@ -54,31 +52,34 @@ function documentBlock(doc: DocumentInput): Anthropic.Beta.BetaContentBlockParam
  * Fixed, short messages for the UI and the mail record. API details (request ids,
  * parameter names, model names in error texts) go to the server log only.
  */
-export function describeError(error: unknown, log: (message: string) => void = (m) => console.error(m)): string {
-  if (error instanceof Anthropic.AuthenticationError) return "API-Schlüssel ungültig";
-  if (error instanceof Anthropic.RateLimitError) return "Rate limit erreicht";
+export function describeError(error: unknown, log: (message: string) => void = (m) => console.error(m), locale: Locale = "de"): string {
+  if (error instanceof Anthropic.AuthenticationError) return pick(locale, "API-Schlüssel ungültig", "API key not valid");
+  if (error instanceof Anthropic.RateLimitError) return pick(locale, "Rate limit erreicht", "Rate limit reached");
   if (error instanceof Anthropic.BadRequestError) {
     log(`[claude] bad request: ${error.message}`);
-    return "Anfrage an das Modell ungültig";
+    return pick(locale, "Anfrage an das Modell ungültig", "Request to the model not valid");
   }
-  if (error instanceof Anthropic.APIConnectionError) return "Keine Verbindung zur API";
+  if (error instanceof Anthropic.APIConnectionError) return pick(locale, "Keine Verbindung zur API", "No connection to the API");
   if (error instanceof Anthropic.APIError) {
     log(`[claude] API error ${error.status ?? ""}: ${error.message}`);
-    return `API-Fehler ${error.status ?? ""}`.trim();
+    return pick(locale, `API-Fehler ${error.status ?? ""}`, `API error ${error.status ?? ""}`).trim();
   }
   log(`[claude] unexpected error: ${error instanceof Error ? error.message : String(error)}`);
-  return "Unerwarteter Fehler beim Modellaufruf";
+  return pick(locale, "Unerwarteter Fehler beim Modellaufruf", "Unexpected error calling the model");
 }
 
 export class ClaudeProvider implements LlmProvider {
   readonly mode = "claude" as const;
   private readonly client: Anthropic;
+  private readonly prompts: PromptSet;
 
   constructor(
     apiKey: string,
     private readonly models: ModelConfig = DEFAULT_MODELS,
+    private readonly locale: Locale = "de",
   ) {
     this.client = new Anthropic({ apiKey, maxRetries: 2, timeout: 90_000 });
+    this.prompts = promptsFor(locale);
   }
 
   private async call<S extends z.ZodType>(spec: CallSpec<S>): Promise<ModelCall> {
@@ -100,14 +101,14 @@ export class ClaudeProvider implements LlmProvider {
         : await this.client.beta.messages.parse(params);
 
       if (res.stop_reason === "refusal") {
-        const category = res.stop_details?.category ?? "ohne Kategorie";
-        return { ok: false, error: `Modell hat abgelehnt (${category})`, model: res.model };
+        const category = res.stop_details?.category ?? pick(this.locale, "ohne Kategorie", "no category");
+        return { ok: false, error: pick(this.locale, `Modell hat abgelehnt (${category})`, `Model refused (${category})`), model: res.model };
       }
       if (res.stop_reason === "max_tokens") {
-        return { ok: false, error: "Antwort abgeschnitten (max_tokens)", model: res.model };
+        return { ok: false, error: pick(this.locale, "Antwort abgeschnitten (max_tokens)", "Answer cut off (max_tokens)"), model: res.model };
       }
       if (res.parsed_output === null || res.parsed_output === undefined) {
-        return { ok: false, error: "Antwort passt nicht zum Schema", model: res.model };
+        return { ok: false, error: pick(this.locale, "Antwort passt nicht zum Schema", "Answer does not match the schema"), model: res.model };
       }
       return {
         ok: true,
@@ -117,7 +118,7 @@ export class ClaudeProvider implements LlmProvider {
         outputTokens: res.usage.output_tokens,
       };
     } catch (error) {
-      return { ok: false, error: describeError(error), model: spec.model };
+      return { ok: false, error: describeError(error, undefined, this.locale), model: spec.model };
     }
   }
 
@@ -125,7 +126,7 @@ export class ClaudeProvider implements LlmProvider {
     return this.call({
       model: this.models.classify,
       schema: ClassificationSchema,
-      system: CLASSIFY_SYSTEM,
+      system: this.prompts.classify,
       content: [{ type: "text", text: mailBlock(mail) }],
       effort: "low",
       maxTokens: 4_000,
@@ -136,7 +137,7 @@ export class ClaudeProvider implements LlmProvider {
     return this.call({
       model: this.models.text,
       schema: InvoiceExtractionSchema,
-      system: INVOICE_SYSTEM,
+      system: this.prompts.invoice,
       content: [
         documentBlock(doc),
         {
@@ -154,7 +155,7 @@ export class ClaudeProvider implements LlmProvider {
     return this.call({
       model: this.models.text,
       schema: ReplyDraftSchema,
-      system: request ? REPLY_ON_REQUEST_SYSTEM : DRAFT_SYSTEM,
+      system: request ? this.prompts.replyOnRequest : this.prompts.draft,
       content: [
         {
           type: "text",
@@ -178,7 +179,7 @@ export class ClaudeProvider implements LlmProvider {
     return this.call({
       model: this.models.text,
       schema: ContractExtractionSchema,
-      system: CONTRACT_SYSTEM,
+      system: this.prompts.contract,
       content: [
         documentBlock(doc),
         {

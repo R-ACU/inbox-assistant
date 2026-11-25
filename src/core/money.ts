@@ -1,3 +1,4 @@
+import type { Locale } from "../shared/locale";
 import type { Cents } from "../shared/types";
 
 /**
@@ -24,11 +25,17 @@ export function taxCents(net: Cents, ratePercent: number): Cents {
 }
 
 const eurDe = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+const eurIe = new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR" });
 const eurEn = new Intl.NumberFormat("en-US", { style: "currency", currency: "EUR" });
 const usdEn = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 
 export function formatEur(cents: Cents): string {
   return eurDe.format(cents / 100);
+}
+
+/** Euro amount the way the tenant writes it: "1.000,00 €" (German) or "€1,000.00" (English, Ireland). */
+export function formatMoney(cents: Cents, locale: Locale): string {
+  return (locale === "en" ? eurIe : eurDe).format(cents / 100);
 }
 
 export function formatMoneyEn(cents: Cents, currency: string | null): string {

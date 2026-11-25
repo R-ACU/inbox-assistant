@@ -22,6 +22,7 @@ import { motion } from "motion/react";
 import type { MouseEvent, ReactNode } from "react";
 import type { Category } from "../../../src/shared/schemas";
 import type { Finding, MailStatus } from "../../../src/shared/types";
+import { t } from "../i18n";
 import { CATEGORY_LABEL, navigate } from "../lib";
 import { cn } from "../utils";
 import { Badge, Dot } from "./ui/badge";
@@ -64,17 +65,30 @@ export function toneOf(name: string) {
 const SIZE = { sm: 32, md: 38, lg: 44 } as const;
 
 /** Trade icon for a company sender, so a supplier is recognised by its picture rather than its name. */
-const TRADES: [RegExp, LucideIcon][] = [
-  [/farben/i, PaintBucket],
-  [/malerbedarf/i, Paintbrush],
-  [/innung/i, Landmark],
-  [/baustoff/i, BrickWall],
-  [/gerüst/i, Construction],
-  [/werkzeug/i, Hammer],
-  [/entsorgung/i, Recycle],
-  [/kfz|auto/i, Car],
-  [/gmbh|kg\b|ag\b|partner|kanzlei|online/i, Building2],
-];
+const TRADES: [RegExp, LucideIcon][] = t<[RegExp, LucideIcon][]>(
+  [
+    [/farben/i, PaintBucket],
+    [/malerbedarf/i, Paintbrush],
+    [/innung/i, Landmark],
+    [/baustoff/i, BrickWall],
+    [/gerüst/i, Construction],
+    [/werkzeug/i, Hammer],
+    [/entsorgung/i, Recycle],
+    [/kfz|auto/i, Car],
+    [/gmbh|kg\b|ag\b|partner|kanzlei|online/i, Building2],
+  ],
+  [
+    [/paints?\b|coatings/i, PaintBucket],
+    [/decorat|brush/i, Paintbrush],
+    [/federation|association|guild/i, Landmark],
+    [/builders|merchants?\b|timber|providers/i, BrickWall],
+    [/scaffold/i, Construction],
+    [/tools?\b|hire\b/i, Hammer],
+    [/waste|skip|recycl/i, Recycle],
+    [/motors?\b|auto|garage/i, Car],
+    [/ltd\b|limited|plc\b|partners?\b|solicitors|accountants|online/i, Building2],
+  ],
+);
 export function tradeIcon(name: string): LucideIcon | null {
   return TRADES.find(([re]) => re.test(name))?.[1] ?? null;
 }
@@ -185,7 +199,7 @@ export function ErrorNote({ message, onRetry }: { message: string; onRetry?: () 
       </span>
       {onRetry && (
         <Button size="sm" variant="ghost" className="text-bad hover:bg-bad/10 hover:text-bad" icon={<RefreshCw aria-hidden />} onClick={onRetry}>
-          Erneut laden
+          {t("Erneut laden", "Reload")}
         </Button>
       )}
     </div>

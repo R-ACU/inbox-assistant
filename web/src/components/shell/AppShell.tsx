@@ -6,6 +6,7 @@
 import { CalendarRange, ChevronDown, GitCompareArrows, Inbox, Keyboard, LayoutGrid, LogOut, Moon, PaintRoller, ReceiptText, Search, Sun, X, type LucideIcon } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion, PresenceContext } from "motion/react";
 import { createContext, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { ROUTES, t } from "../../i18n";
 import { navigate, useApi, usePath, useSearch } from "../../lib";
 import { companyOf, currentTheme, getMode, setMode, subscribeMode } from "../../theme";
 import { cn } from "../../utils";
@@ -44,21 +45,27 @@ interface NavItem {
  * so a draft, an invoice and a suspicious mail are all handled in the same place.
  */
 export const NAV: NavItem[] = [
-  { to: "/", label: "Übersicht", icon: LayoutGrid },
-  { to: "/freigabe", label: "Posteingang", icon: Inbox, count: (c) => c.awaitingApproval + c.openReview + c.quarantined, also: ["/pruefliste", "/posteingang", "/mail"] },
-  { to: "/rechnungen", label: "Rechnungen", icon: ReceiptText },
-  { to: "/woche", label: "Woche", icon: CalendarRange },
-  { to: "/abgleich", label: "Abgleich", icon: GitCompareArrows },
+  { to: ROUTES.overview, label: t("Übersicht", "Overview"), icon: LayoutGrid },
+  {
+    to: ROUTES.approval,
+    label: t("Posteingang", "Inbox"),
+    icon: Inbox,
+    count: (c) => c.awaitingApproval + c.openReview + c.quarantined,
+    also: [ROUTES.review, ROUTES.inbox, ROUTES.mail],
+  },
+  { to: ROUTES.invoices, label: t("Rechnungen", "Invoices"), icon: ReceiptText },
+  { to: ROUTES.week, label: t("Woche", "Week"), icon: CalendarRange },
+  { to: ROUTES.reconcile, label: t("Abgleich", "Reconcile"), icon: GitCompareArrows },
 ];
 
 export function isActive(path: string, item: NavItem) {
-  if (item.to === "/") return path === "/";
+  if (item.to === ROUTES.overview) return path === ROUTES.overview;
   return [item.to, ...(item.also ?? [])].some((to) => path === to || path.startsWith(`${to}/`));
 }
 
 // ---------------------------------------------------------------- page title
 
-const APP_NAME = "Hofmann & Kraft";
+const APP_NAME = t("Hofmann & Kraft", "Brennan & Doyle");
 export function usePageTitle(title: string) {
   useEffect(() => {
     document.title = `${title} | ${APP_NAME}`;
@@ -74,7 +81,7 @@ export function useMode() {
 export function ModeToggle({ className }: { className?: string }) {
   const mode = useMode();
   const dark = mode === "dark";
-  const label = dark ? "Helles Design" : "Dunkles Design";
+  const label = dark ? t("Helles Design", "Light mode") : t("Dunkles Design", "Dark mode");
   return (
     <Tooltip content={label} side="bottom">
       <Button variant="ghost" size="icon" className={cn("relative overflow-hidden", className)} aria-label={label} onClick={() => setMode(dark ? "light" : "dark")}>
@@ -113,17 +120,17 @@ export function useShortcuts(handlers: Handlers) {
 }
 
 const SHORTCUTS: [string, string][] = [
-  ["j", "Nächste Mail in der Liste"],
-  ["k", "Vorherige Mail in der Liste"],
-  ["e", "Zur Freigabe, dort den Knopf Senden ansteuern"],
-  ["/", "Mails durchsuchen"],
-  ["?", "Diese Hilfe öffnen"],
-  ["Esc", "Hilfe, Menü oder Auswahl schließen"],
+  ["j", t("Nächste Mail in der Liste", "Next mail in the list")],
+  ["k", t("Vorherige Mail in der Liste", "Previous mail in the list")],
+  ["e", t("Zur Freigabe, dort den Knopf Senden ansteuern", "Go to approval and focus Send")],
+  ["/", t("Mails durchsuchen", "Search mails")],
+  ["?", t("Diese Hilfe öffnen", "Open this help")],
+  ["Esc", t("Hilfe, Menü oder Auswahl schließen", "Close help, menu or selection")],
 ];
 
 function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Dialog open={open} onClose={onClose} title="Tastenkürzel">
+    <Dialog open={open} onClose={onClose} title={t("Tastenkürzel", "Keyboard shortcuts")}>
       <dl className="flex flex-col gap-3">
         {SHORTCUTS.map(([k, d]) => (
           <div key={k} className="flex items-center gap-4 text-[13.5px]">
@@ -135,7 +142,10 @@ function ShortcutHelp({ open, onClose }: { open: boolean; onClose: () => void })
         ))}
       </dl>
       <p className="mt-6 rounded-[18px] bg-surface-2 px-4 py-3 text-[12.5px] leading-relaxed text-ink-2">
-        Senden bleibt immer ein eigener Klick oder ein Enter auf dem Knopf. Ein einzelner Buchstabe verschickt nie etwas.
+        {t(
+          "Senden bleibt immer ein eigener Klick oder ein Enter auf dem Knopf. Ein einzelner Buchstabe verschickt nie etwas.",
+          "Sending always takes its own click or Enter on the button. A single letter never sends anything.",
+        )}
       </p>
     </Dialog>
   );
@@ -157,17 +167,17 @@ export function DemoNote({ className }: { className?: string }) {
   if (!company) return null;
   return (
     <p className={cn("text-[12.5px] text-ink-3", className)} data-testid="theme-note">
-      Demo für {company}
+      {t(`Demo für ${company}`, `Demo for ${company}`)}
     </p>
   );
 }
 
 function ModeBadge({ mode }: { mode: "mock" | "claude" }) {
   return (
-    <Tooltip content={mode === "mock" ? "Modellantworten aus Testdaten" : "Haiku sortiert, Sonnet liest und schreibt"} side="bottom">
+    <Tooltip content={mode === "mock" ? t("Modellantworten aus Testdaten", "Model answers from test data") : t("Haiku sortiert, Sonnet liest und schreibt", "Haiku sorts, Sonnet reads and writes")} side="bottom">
       <Badge tone="outline" size="md" className="h-11 cursor-default gap-2 border-0 bg-surface pr-4 pl-3 text-[13px] text-ink-2 shadow-card" tabIndex={0}>
         <BrandGlyph brand="claude" className="size-[18px]" />
-        {mode === "mock" ? "Testmodus" : "Claude API"}
+        {mode === "mock" ? t("Testmodus", "Mock mode") : "Claude API"}
       </Badge>
     </Tooltip>
   );
@@ -243,12 +253,12 @@ function RailButton({ label, icon: Icon, onClick }: { label: string; icon: Lucid
 
 // ---------------------------------------------------------------- top bar
 
-const MAIL_ROUTES = /^\/(freigabe|pruefliste|posteingang|mail)(\/|$)/;
+const MAIL_ROUTES = new RegExp(`^/(${[ROUTES.approval, ROUTES.review, ROUTES.inbox, ROUTES.mail].map((r) => r.slice(1)).join("|")})(/|$)`);
 
 /** The list a mail route belongs to, without the selected mail: /freigabe/abc -> /freigabe, /mail/abc -> /posteingang. */
 function listOf(path: string) {
   const first = path.split("/")[1] ?? "";
-  return first === "mail" ? "/posteingang" : `/${first}`;
+  return `/${first}` === ROUTES.mail ? ROUTES.inbox : `/${first}`;
 }
 
 /** Mail search. In the mailbox it filters the list while typing (?q= in the URL); elsewhere Enter opens the mailbox with the term. */
@@ -278,7 +288,7 @@ function SearchField() {
       onSubmit={(e) => {
         e.preventDefault();
         const v = q.trim().slice(0, 100);
-        if (!inMail) navigate(v ? `/posteingang?q=${encodeURIComponent(v)}` : "/posteingang");
+        if (!inMail) navigate(v ? `${ROUTES.inbox}?q=${encodeURIComponent(v)}` : ROUTES.inbox);
         ref.current?.blur();
       }}
     >
@@ -293,14 +303,14 @@ function SearchField() {
             e.currentTarget.blur();
           }
         }}
-        placeholder="Mails durchsuchen"
-        aria-label="Mails durchsuchen"
+        placeholder={t("Mails durchsuchen", "Search mails")}
+        aria-label={t("Mails durchsuchen", "Search mails")}
         className="h-11 w-full rounded-full border border-transparent bg-surface pr-12 pl-11 text-[13.5px] text-ink shadow-card outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-ink-3 hover:border-line-strong focus:border-accent focus:shadow-[0_0_0_3px_var(--accent-soft)] focus-visible:outline-none"
       />
       {q ? (
         <button
           type="button"
-          aria-label="Suche leeren"
+          aria-label={t("Suche leeren", "Clear search")}
           onClick={() => apply("")}
           className="press absolute top-1/2 right-2.5 grid size-7 -translate-y-1/2 place-items-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink"
         >
@@ -316,27 +326,27 @@ function SearchField() {
 function AccountMenu({ onLogout, onHelp }: { onLogout: () => void; onHelp: () => void }) {
   return (
     <Menu
-      label="Konto"
+      label={t("Konto", "Account")}
       trigger={
-        <button className="press flex h-11 items-center gap-2.5 rounded-full bg-surface py-1 pr-3 pl-1 text-left shadow-card hover:bg-surface-2" aria-label="Konto">
-          <Avatar name="Jonas Hofmann" size="sm" className="size-9" />
+        <button className="press flex h-11 items-center gap-2.5 rounded-full bg-surface py-1 pr-3 pl-1 text-left shadow-card hover:bg-surface-2" aria-label={t("Konto", "Account")}>
+          <Avatar name={t("Jonas Hofmann", "Conor Brennan")} size="sm" className="size-9" />
           <span className="hidden leading-tight xl:block">
-            <span className="block text-[13px] font-medium text-ink">Jonas Hofmann</span>
-            <span className="block text-[12px] text-ink-3">Inhaber</span>
+            <span className="block text-[13px] font-medium text-ink">{t("Jonas Hofmann", "Conor Brennan")}</span>
+            <span className="block text-[12px] text-ink-3">{t("Inhaber", "Owner")}</span>
           </span>
           <ChevronDown className="size-4 text-ink-3" aria-hidden />
         </button>
       }
     >
-      <MenuLabel>Malerbetrieb Hofmann &amp; Kraft</MenuLabel>
+      <MenuLabel>{t("Malerbetrieb Hofmann & Kraft", "Brennan & Doyle Painting")}</MenuLabel>
       <MenuItem onSelect={onHelp}>
         <Keyboard aria-hidden />
-        Tastenkürzel
+        {t("Tastenkürzel", "Keyboard shortcuts")}
       </MenuItem>
       <MenuSeparator />
       <MenuItem onSelect={onLogout}>
         <LogOut aria-hidden />
-        Abmelden
+        {t("Abmelden", "Sign out")}
       </MenuItem>
     </Menu>
   );
@@ -346,7 +356,7 @@ function AccountMenu({ onLogout, onHelp }: { onLogout: () => void; onHelp: () =>
 
 function BottomTabs({ counts, path }: { counts: Counts | null; path: string }) {
   return (
-    <nav aria-label="Schnellzugriff" className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
+    <nav aria-label={t("Schnellzugriff", "Quick access")} className="fixed inset-x-0 bottom-0 z-40 border-t border-line bg-surface/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
       <LayoutGroup id="tabs">
         <ul className="mx-auto flex max-w-[560px] items-stretch justify-between gap-1 px-2 py-1.5">
           {NAV.map((item) => {
@@ -393,7 +403,7 @@ function NoReplay({ children }: { children: ReactNode }) {
 
 function sectionOf(path: string) {
   const first = path.split("/")[1] ?? "";
-  return ["mail", "freigabe", "pruefliste"].includes(first) ? "posteingang" : first;
+  return [ROUTES.mail, ROUTES.approval, ROUTES.review].includes(`/${first}`) ? ROUTES.inbox.slice(1) : first;
 }
 
 export function AppShell({ mode, onLogout, children }: { mode: "mock" | "claude"; onLogout: () => void; children: ReactNode }) {
@@ -426,7 +436,7 @@ export function AppShell({ mode, onLogout, children }: { mode: "mock" | "claude"
         fn();
       } else if (key === "e") {
         e.preventDefault();
-        navigate("/freigabe");
+        navigate(ROUTES.approval);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -445,18 +455,18 @@ export function AppShell({ mode, onLogout, children }: { mode: "mock" | "claude"
     <CountsContext.Provider value={{ counts: counts.data, refresh: counts.reload }}>
       <ShortcutContext.Provider value={shortcuts.current}>
         <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-[100] focus:rounded-full focus:bg-surface focus:px-3 focus:py-2 focus:text-ink focus:shadow-pop">
-          Zum Inhalt springen
+          {t("Zum Inhalt springen", "Skip to content")}
         </a>
         <div className="min-h-dvh bg-canvas lg:grid lg:h-dvh lg:grid-cols-[84px_minmax(0,1fr)] lg:overflow-hidden">
           {/* Desktop rail */}
           <aside className="hidden h-dvh flex-col items-center justify-between py-3.5 lg:flex">
             <div className="flex flex-col items-center gap-5">
-              <Tooltip side="right" content="Hofmann & Kraft">
-                <Link to="/" aria-label="Hofmann & Kraft, zur Übersicht" className="press rounded-full">
+              <Tooltip side="right" content={APP_NAME}>
+                <Link to={ROUTES.overview} aria-label={t("Hofmann & Kraft, zur Übersicht", "Brennan & Doyle, to overview")} className="press rounded-full">
                   <BrandMark />
                 </Link>
               </Tooltip>
-              <nav aria-label="Hauptnavigation" className="rounded-full bg-surface p-1.5 shadow-card">
+              <nav aria-label={t("Hauptnavigation", "Main navigation")} className="rounded-full bg-surface p-1.5 shadow-card">
                 <LayoutGroup id="rail">
                   <ul className="flex flex-col items-center gap-1.5">
                     {NAV.map((item) => (
@@ -467,8 +477,8 @@ export function AppShell({ mode, onLogout, children }: { mode: "mock" | "claude"
               </nav>
             </div>
             <div className="flex flex-col items-center gap-1.5 rounded-full bg-surface p-1.5 shadow-card">
-              <RailButton label="Tastenkürzel (?)" icon={Keyboard} onClick={() => setHelp(true)} />
-              <RailButton label="Abmelden" icon={LogOut} onClick={onLogout} />
+              <RailButton label={t("Tastenkürzel (?)", "Keyboard shortcuts (?)")} icon={Keyboard} onClick={() => setHelp(true)} />
+              <RailButton label={t("Abmelden", "Sign out")} icon={LogOut} onClick={onLogout} />
             </div>
           </aside>
 

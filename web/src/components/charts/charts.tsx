@@ -8,6 +8,7 @@
 import { motion } from "motion/react";
 import { useId, useState, type ReactNode } from "react";
 import { Area, AreaChart, Bar, BarChart, Cell, Pie, PieChart, ResponsiveContainer, Tooltip as ChartTooltip, XAxis, YAxis } from "recharts";
+import { t } from "../../i18n";
 import { cn } from "../../utils";
 import { usePrefersReducedMotion } from "../motion";
 import { Tooltip } from "../ui/tooltip";
@@ -184,7 +185,7 @@ export function StackedPills<Row extends { label: string; tooltipTitle: string }
                 <TooltipCard
                   title={row.tooltipTitle}
                   rows={[...series].reverse().map((s) => ({ key: s.key, label: s.label, value: unit(Number(row[s.key] ?? 0)), color: s.color, dim: Number(row[s.key] ?? 0) === 0 }))}
-                  footer={{ label: "Zusammen", value: unit(row.__total) }}
+                  footer={{ label: t("Zusammen", "Total"), value: unit(row.__total) }}
                 />
               );
             }}

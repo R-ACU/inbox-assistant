@@ -12,6 +12,7 @@ import { CountUp } from "../components/motion";
 import { PageScroll, usePageTitle } from "../components/shell/AppShell";
 import { Card } from "../components/ui/card";
 import { Skeleton } from "../components/ui/misc";
+import { ROUTES, t } from "../i18n";
 import { formatCents, formatDate, navigate, useApi } from "../lib";
 import { cn } from "../utils";
 
@@ -20,11 +21,11 @@ const ease = [0.23, 1, 0.32, 1] as const;
 function Checked({ ok }: { ok: boolean }) {
   return ok ? (
     <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-good">
-      <Check className="size-4" aria-hidden /> stimmt
+      <Check className="size-4" aria-hidden /> {t("stimmt", "matches")}
     </span>
   ) : (
     <span className="inline-flex items-center gap-1.5 text-[13px] font-medium text-bad">
-      <X className="size-4" aria-hidden /> weicht ab
+      <X className="size-4" aria-hidden /> {t("weicht ab", "differs")}
     </span>
   );
 }
@@ -53,40 +54,40 @@ function Summary({ rows }: { rows: InvoiceRow[] }) {
   return (
     <div className="mb-4 grid grid-cols-1 gap-4 lg:grid-cols-12">
       <motion.section
-        aria-label="Abgelegt"
+        aria-label={t("Abgelegt", "Filed")}
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease }}
         data-mode="dark"
         className="flex flex-col rounded-[28px] bg-hero p-7 text-hero-ink shadow-card lg:col-span-5"
       >
-        <Title icon={ReceiptText} title="Abgelegt" tone="hero" />
+        <Title icon={ReceiptText} title={t("Abgelegt", "Filed")} tone="hero" />
         <p className="mt-8 text-[56px] leading-none font-medium tracking-[-0.04em]">
           <CountUp id="invoices.gross" value={gross} format={(v) => formatCents(Math.round(v))} />
         </p>
         <p className="mt-3 text-[13.5px] text-hero-ink-2">
-          brutto, {filed.length} {filed.length === 1 ? "Beleg" : "Belege"}
+          {t(`brutto, ${filed.length} ${filed.length === 1 ? "Beleg" : "Belege"}`, `gross, ${filed.length} ${filed.length === 1 ? "invoice" : "invoices"}`)}
         </p>
         <div className="mt-auto flex items-center gap-3 pt-8">
           <AvatarStack names={suppliers.map(([n]) => n)} max={6} ring="ring-hero" />
-          <span className="text-[13px] text-hero-ink-2">{suppliers.length} Lieferanten</span>
+          <span className="text-[13px] text-hero-ink-2">{t(`${suppliers.length} Lieferanten`, `${suppliers.length} ${suppliers.length === 1 ? "supplier" : "suppliers"}`)}</span>
         </div>
       </motion.section>
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.05, ease }} className="lg:col-span-3">
         <Card className="flex h-full flex-col p-6">
-          <Title icon={ScanSearch} title="Nachgerechnet" />
+          <Title icon={ScanSearch} title={t("Nachgerechnet", "Recalculated")} />
           <p className="mt-8 text-[44px] leading-none font-medium tracking-[-0.03em] text-ink">
             <CountUp id="invoices.matching" value={rows.length - flagged} />
             <span className="text-[22px] text-ink-3"> / {rows.length}</span>
           </p>
-          <p className="mt-2 text-[13px] text-ink-2">stimmen auf den Cent</p>
+          <p className="mt-2 text-[13px] text-ink-2">{t("stimmen auf den Cent", "match to the cent")}</p>
           <div className="mt-auto pt-6">
             <SplitBar
-              ariaLabel={`${rows.length - flagged} stimmen, ${flagged} mit Abweichung`}
+              ariaLabel={t(`${rows.length - flagged} stimmen, ${flagged} mit Abweichung`, `${rows.length - flagged} match, ${flagged} differ`)}
               slices={[
-                { key: "ok", label: "Stimmen", value: rows.length - flagged, color: "var(--accent)" },
-                { key: "bad", label: "Abweichung", value: flagged, color: "var(--chart-4)" },
+                { key: "ok", label: t("Stimmen", "Match"), value: rows.length - flagged, color: "var(--accent)" },
+                { key: "bad", label: t("Abweichung", "Differ"), value: flagged, color: "var(--chart-4)" },
               ]}
             />
           </div>
@@ -95,16 +96,16 @@ function Summary({ rows }: { rows: InvoiceRow[] }) {
 
       <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1, ease }} className="lg:col-span-4">
         <Card className="flex h-full flex-col p-6">
-          <Title icon={Building2} title="Lieferanten" />
-          <ul className="mt-4 flex flex-col gap-1" aria-label="Lieferanten nach Betrag">
+          <Title icon={Building2} title={t("Lieferanten", "Suppliers")} />
+          <ul className="mt-4 flex flex-col gap-1" aria-label={t("Lieferanten nach Betrag", "Suppliers by amount")}>
             {suppliers.slice(0, 4).map(([name, v], i) => (
               <motion.li key={name} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.3, delay: 0.15 + i * 0.05, ease }} className="-mx-2 flex items-center gap-3 rounded-[18px] px-2 py-2 hover:bg-surface-2">
                 <Avatar name={name} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] font-medium text-ink">{name.replace(/\s+(GmbH(\s*&\s*Co\.\s*KG)?|KG|AG)$/, "")}</span>
+                  <span className="block truncate text-[14px] font-medium text-ink">{name.replace(t(/\s+(GmbH(\s*&\s*Co\.\s*KG)?|KG|AG)$/, /\s+(Ltd\.?|Limited|Plc)$/i), "")}</span>
                   <span className="tnum block text-[12.5px] text-ink-3">{formatCents(v.cents)}</span>
                 </span>
-                <Ring value={gross === 0 ? 0 : v.cents / gross} size={42} label={`${Math.round(gross === 0 ? 0 : (v.cents / gross) * 100)} Prozent der Summe`} />
+                <Ring value={gross === 0 ? 0 : v.cents / gross} size={42} label={t(`${Math.round(gross === 0 ? 0 : (v.cents / gross) * 100)} Prozent der Summe`, `${Math.round(gross === 0 ? 0 : (v.cents / gross) * 100)} percent of the total`)} />
               </motion.li>
             ))}
           </ul>
@@ -115,7 +116,7 @@ function Summary({ rows }: { rows: InvoiceRow[] }) {
 }
 
 export function InvoicesPage() {
-  usePageTitle("Rechnungen");
+  usePageTitle(t("Rechnungen", "Invoices"));
   const { data, error, loading, reload } = useApi<InvoiceRow[]>("/api/invoices");
   const filed = (data ?? []).filter((r) => r.status === "filed");
   const sum = filed.reduce((s, r) => s + r.grossCents, 0);
@@ -123,19 +124,19 @@ export function InvoicesPage() {
   return (
     <PageScroll>
       <div className="pb-6">
-        <h1 className="text-[32px] leading-tight font-medium tracking-[-0.03em] text-ink">Rechnungen</h1>
-        <p className="mt-1 text-[14px] text-ink-2">{data ? `${data.length} Belege ausgelesen` : " "}</p>
+        <h1 className="text-[32px] leading-tight font-medium tracking-[-0.03em] text-ink">{t("Rechnungen", "Invoices")}</h1>
+        <p className="mt-1 text-[14px] text-ink-2">{data ? t(`${data.length} Belege ausgelesen`, `${data.length} invoices read`) : " "}</p>
       </div>
       {error && <ErrorNote message={error} onRetry={reload} />}
       {loading && !data && (
-        <div aria-busy="true" aria-label="Wird geladen" className="flex flex-col gap-4">
+        <div aria-busy="true" aria-label={t("Wird geladen", "Loading")} className="flex flex-col gap-4">
           <Skeleton className="h-[300px] rounded-[28px]" />
           <Skeleton className="h-[420px] rounded-[28px]" />
         </div>
       )}
       {data && data.length === 0 && (
         <Card>
-          <EmptyState icon={ReceiptText} title="Noch keine Rechnungen." />
+          <EmptyState icon={ReceiptText} title={t("Noch keine Rechnungen.", "No invoices yet.")} />
         </Card>
       )}
       {data && data.length > 0 && (
@@ -143,18 +144,18 @@ export function InvoicesPage() {
           <Summary rows={data} />
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.15, ease }}>
             <Card className="p-3 sm:p-4">
-              <h2 className="px-3 pt-2 pb-2 text-[16px] font-medium text-ink">Belege</h2>
+              <h2 className="px-3 pt-2 pb-2 text-[16px] font-medium text-ink">{t("Belege", "Documents")}</h2>
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full border-separate border-spacing-y-1 text-[13.5px]">
                   <thead>
                     <tr className="text-left text-[12.5px] text-ink-3">
-                      <th className="px-3 py-2 font-normal">Lieferant</th>
-                      <th className="px-3 py-2 font-normal">Nummer</th>
-                      <th className="px-3 py-2 font-normal">Datum</th>
-                      <th className="px-3 py-2 text-right font-normal">Brutto</th>
-                      <th className="px-3 py-2 font-normal">Prüfung</th>
+                      <th className="px-3 py-2 font-normal">{t("Lieferant", "Supplier")}</th>
+                      <th className="px-3 py-2 font-normal">{t("Nummer", "Number")}</th>
+                      <th className="px-3 py-2 font-normal">{t("Datum", "Date")}</th>
+                      <th className="px-3 py-2 text-right font-normal">{t("Brutto", "Gross")}</th>
+                      <th className="px-3 py-2 font-normal">{t("Prüfung", "Check")}</th>
                       <th className="px-3 py-2 text-right font-normal">
-                        <span className="sr-only">Öffnen</span>
+                        <span className="sr-only">{t("Öffnen", "Open")}</span>
                       </th>
                     </tr>
                   </thead>
@@ -165,14 +166,14 @@ export function InvoicesPage() {
                         initial={{ opacity: 0, y: 4 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ duration: 0.24, delay: 0.2 + i * 0.03 }}
-                        onClick={() => navigate(`/mail/${r.mailId}`)}
+                        onClick={() => navigate(`${ROUTES.mail}/${r.mailId}`)}
                         className={cn(
                           "group cursor-pointer [&>td]:transition-colors [&>td]:duration-150 [&>td:first-child]:rounded-l-[18px] [&>td:last-child]:rounded-r-[18px]",
                           r.ok ? "hover:[&>td]:bg-surface-2" : "[&>td]:bg-bad-soft",
                         )}
                       >
                         <td className="px-3 py-2">
-                          <Link to={`/mail/${r.mailId}`} className="flex items-center gap-3 font-medium text-ink">
+                          <Link to={`${ROUTES.mail}/${r.mailId}`} className="flex items-center gap-3 font-medium text-ink">
                             <Avatar name={r.supplier} size="sm" />
                             <span className="truncate">{r.supplier}</span>
                           </Link>
@@ -195,7 +196,7 @@ export function InvoicesPage() {
                   <tfoot>
                     <tr className="[&>td]:bg-surface-2 [&>td:first-child]:rounded-l-[18px] [&>td:last-child]:rounded-r-[18px]">
                       <td className="px-4 py-3.5 text-ink-2" colSpan={3}>
-                        Summe abgelegt
+                        {t("Summe abgelegt", "Total filed")}
                       </td>
                       <td className="tnum px-3 py-3.5 text-right font-semibold text-ink">{formatCents(sum)}</td>
                       <td colSpan={2} />
@@ -207,7 +208,7 @@ export function InvoicesPage() {
               <ul className="flex flex-col gap-1.5 md:hidden">
                 {data.map((r) => (
                   <li key={r.mailId}>
-                    <Link to={`/mail/${r.mailId}`} className={cn("press flex items-center gap-3 rounded-[20px] px-3 py-3", r.ok ? "bg-surface-2" : "bg-bad-soft")}>
+                    <Link to={`${ROUTES.mail}/${r.mailId}`} className={cn("press flex items-center gap-3 rounded-[20px] px-3 py-3", r.ok ? "bg-surface-2" : "bg-bad-soft")}>
                       <Avatar name={r.supplier} size="sm" />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[14px] font-medium text-ink">{r.supplier}</span>
@@ -221,7 +222,7 @@ export function InvoicesPage() {
                   </li>
                 ))}
                 <li className="flex items-baseline justify-between px-2 pt-2 text-[13.5px]">
-                  <span className="text-ink-2">Summe abgelegt</span>
+                  <span className="text-ink-2">{t("Summe abgelegt", "Total filed")}</span>
                   <span className="tnum font-semibold text-ink">{formatCents(sum)}</span>
                 </li>
               </ul>

@@ -16,18 +16,19 @@ import { PageScroll, usePageTitle } from "../components/shell/AppShell";
 import { Card } from "../components/ui/card";
 import { Skeleton } from "../components/ui/misc";
 import { Tooltip } from "../components/ui/tooltip";
+import { INTL_LOCALE, ROUTES, TIME_ZONE, t } from "../i18n";
 import { CATEGORY_LABEL, STATUS_LABEL, formatCents, formatDayLong, useApi } from "../lib";
 import { cn } from "../utils";
 
 type Weekly = WeeklySummary & { weeks: string[] };
 const ease = [0.23, 1, 0.32, 1] as const;
 
-const berlin = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+const berlin = new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 function local(iso: string) {
   const p = Object.fromEntries(berlin.formatToParts(new Date(iso)).map((x) => [x.type, x.value]));
   return { date: `${p.year}-${p.month}-${p.day}`, hours: Number(p.hour) + Number(p.minute) / 60, time: `${p.hour}:${p.minute}` };
 }
-const weekday = new Intl.DateTimeFormat("de-DE", { weekday: "short", timeZone: "UTC" });
+const weekday = new Intl.DateTimeFormat(INTL_LOCALE, { weekday: "short", timeZone: "UTC" });
 const addDays = (iso: string, n: number) => new Date(Date.parse(`${iso}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const todayBerlin = () => local(new Date().toISOString()).date;
 
@@ -87,7 +88,7 @@ function Calendar({ w, mails }: { w: Weekly; mails: MailListItem[] }) {
           <span aria-hidden className="grid size-10 place-items-center rounded-full bg-accent-soft text-accent-text">
             <CalendarDays className="size-[18px]" strokeWidth={1.9} />
           </span>
-          <h2 className="text-[16px] font-medium tracking-[-0.01em] text-ink">Eingang</h2>
+          <h2 className="text-[16px] font-medium tracking-[-0.01em] text-ink">{t("Eingang", "Incoming")}</h2>
         </div>
         <ValueLegend items={CATEGORIES.map((c) => ({ key: c, label: CATEGORY_LABEL[c], value: String(w.totals.byCategory[c]), color: CATEGORY_COLOR[c].fill }))} />
       </div>
@@ -139,7 +140,7 @@ function Calendar({ w, mails }: { w: Weekly; mails: MailListItem[] }) {
                       }
                     >
                       <Link
-                        to={`/mail/${x.m.id}`}
+                        to={`${ROUTES.mail}/${x.m.id}`}
                         aria-label={`${sender}, ${x.time}, ${x.m.subject}`}
                         className="press block rounded-full transition-transform duration-200 hover:z-20 hover:scale-110"
                       >
@@ -180,14 +181,14 @@ function Stat({ icon: Icon, label, value, note }: { icon: typeof Inbox; label: s
 }
 
 function Numbers({ w }: { w: Weekly }) {
-  const t = w.totals;
+  const tot = w.totals;
   return (
     <Card className="p-3">
       <div className="grid grid-cols-2 gap-2">
-        <Stat icon={Inbox} label="Eingang" value={t.mails} />
-        <Stat icon={FolderCheck} label="Abgelegt" value={t.invoicesFiled} note={t.invoicesFiled > 0 ? formatCents(t.invoicesGrossCents) : undefined} />
-        <Stat icon={Send} label="Gesendet" value={t.sent} />
-        <Stat icon={ListTodo} label="Offen" value={t.awaitingApproval + t.openReview + t.quarantined} />
+        <Stat icon={Inbox} label={t("Eingang", "Incoming")} value={tot.mails} />
+        <Stat icon={FolderCheck} label={t("Abgelegt", "Filed")} value={tot.invoicesFiled} note={tot.invoicesFiled > 0 ? formatCents(tot.invoicesGrossCents) : undefined} />
+        <Stat icon={Send} label={t("Gesendet", "Sent")} value={tot.sent} />
+        <Stat icon={ListTodo} label={t("Offen", "Open")} value={tot.awaitingApproval + tot.openReview + tot.quarantined} />
       </div>
     </Card>
   );
@@ -197,15 +198,15 @@ function Open({ w, mails }: { w: Weekly; mails: MailListItem[] }) {
   const byId = new Map(mails.map((m) => [m.id, m]));
   return (
     <Card className="p-6">
-      <h2 className="text-[16px] font-medium text-ink">Noch offen</h2>
+      <h2 className="text-[16px] font-medium text-ink">{t("Noch offen", "Still open")}</h2>
       {w.attention.length === 0 ? (
-        <p className="mt-3 text-[13.5px] text-ink-2">Alles erledigt.</p>
+        <p className="mt-3 text-[13.5px] text-ink-2">{t("Alles erledigt.", "All done.")}</p>
       ) : (
         <ul className="mt-3 flex flex-col gap-1">
           {w.attention.map((a, i) => {
             const m = byId.get(a.mailId);
             const sender = m ? m.from.name || m.from.address : a.subject;
-            const href = a.status === "awaiting_approval" ? `/freigabe/${a.mailId}` : `/pruefliste/${a.mailId}`;
+            const href = a.status === "awaiting_approval" ? `${ROUTES.approval}/${a.mailId}` : `${ROUTES.review}/${a.mailId}`;
             return (
               <motion.li key={a.mailId} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.3, delay: 0.15 + i * 0.05, ease }}>
                 <Link to={href} title={a.reason} className="press group -mx-2 flex items-center gap-3 rounded-[18px] px-2 py-2 hover:bg-surface-2">
@@ -224,7 +225,7 @@ function Open({ w, mails }: { w: Weekly; mails: MailListItem[] }) {
 }
 
 export function WeeklyPage() {
-  usePageTitle("Woche");
+  usePageTitle(t("Woche", "Week"));
   const [week, setWeek] = useState<string | null>(null);
   const { data, error, loading, reload } = useApi<Weekly>(week ? `/api/weekly?week=${week}` : "/api/weekly");
   const mails = useApi<MailListItem[]>("/api/mails");
@@ -241,11 +242,11 @@ export function WeeklyPage() {
     <PageScroll>
       <div className="flex flex-col gap-4 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-[32px] leading-tight font-medium tracking-[-0.03em] text-ink">Woche</h1>
+          <h1 className="text-[32px] leading-tight font-medium tracking-[-0.03em] text-ink">{t("Woche", "Week")}</h1>
           <p className="mt-1 text-[14px] text-ink-2">
             {w && w.weeks.length > 0 ? (
               <>
-                KW {Number(w.isoWeek.split("W")[1])} · {formatDayLong(w.weekStart)} bis {formatDayLong(w.weekEnd)}
+                {t("KW", "Week")} {Number(w.isoWeek.split("W")[1])} · {formatDayLong(w.weekStart)} {t("bis", "to")} {formatDayLong(w.weekEnd)}
               </>
             ) : (
               " "
@@ -254,10 +255,10 @@ export function WeeklyPage() {
         </div>
         {w && w.weeks.length > 0 && (
           <div className="flex items-center gap-2">
-            <RoundNav label="Vorherige Woche" disabled={!prev} onClick={() => prev && setWeek(prev)}>
+            <RoundNav label={t("Vorherige Woche", "Previous week")} disabled={!prev} onClick={() => prev && setWeek(prev)}>
               <ArrowLeft className="size-[18px]" aria-hidden />
             </RoundNav>
-            <RoundNav label="Nächste Woche" disabled={!next} onClick={() => next && setWeek(next)}>
+            <RoundNav label={t("Nächste Woche", "Next week")} disabled={!next} onClick={() => next && setWeek(next)}>
               <ArrowRight className="size-[18px]" aria-hidden />
             </RoundNav>
           </div>
@@ -265,14 +266,14 @@ export function WeeklyPage() {
       </div>
       {error && <ErrorNote message={error} onRetry={reload} />}
       {loading && !data && (
-        <div aria-busy="true" aria-label="Wird geladen" className="grid gap-4 lg:grid-cols-12">
+        <div aria-busy="true" aria-label={t("Wird geladen", "Loading")} className="grid gap-4 lg:grid-cols-12">
           <Skeleton className="h-[520px] rounded-[28px] lg:col-span-8" />
           <Skeleton className="h-[520px] rounded-[28px] lg:col-span-4" />
         </div>
       )}
       {w && w.weeks.length === 0 && (
         <Card>
-          <EmptyState icon={CalendarDays} title="Noch keine Woche mit Mails." />
+          <EmptyState icon={CalendarDays} title={t("Noch keine Woche mit Mails.", "No week with mails yet.")} />
         </Card>
       )}
       <AnimatePresence mode="wait" initial={false}>

@@ -18,5 +18,5 @@
     "noEmit": true,
     "types": ["node", "vite/client"]
   },
-  "include": ["src", "web/src", "scripts", "tests", "e2e", "fixtures/*.ts", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"]
+  "include": ["src", "web/src", "scripts", "tests", "e2e", "fixtures/*.ts", "fixtures/en/*.ts", "vite.config.ts", "vitest.config.ts", "playwright.config.ts"]
 }

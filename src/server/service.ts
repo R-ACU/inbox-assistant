@@ -17,6 +17,7 @@ import { inspectAttachment, safeFilename } from "../core/attachments";
 import type { DocumentMediaType, LlmProvider } from "../llm/provider";
 import { mailIdFor, parseEml, sha256 } from "../mail/parse";
 import { ContractExtractionSchema, type ContractExtraction } from "../shared/schemas";
+import { pick, type Locale } from "../shared/locale";
 import type { AuditEvent, DashboardData, Finding, InvoiceRow, MailListItem, ModelStep, ProcessedMail, ReconcileResult, WeeklySummary } from "../shared/types";
 import type { TenantProfile } from "../tenant/profile";
 import type { AppConfig } from "./config";
@@ -50,8 +51,10 @@ export interface ContractSample {
 
 const MEDIA: Record<string, DocumentMediaType> = { pdf: "application/pdf", png: "image/png", jpeg: "image/jpeg" };
 
-// German wording for the audit trail, which the owner reads in the UI.
+// Wording for the audit trail, which the owner reads in the UI. The action slugs of the events stay
+// German identifiers in both languages (the UI maps them to labels); the detail text follows the tenant.
 const CATEGORY_DE = { invoice: "Rechnung", inquiry: "Anfrage", other: "Sonstiges", suspicious: "Verdächtig" } as const;
+const CATEGORY_EN = { invoice: "invoice", inquiry: "enquiry", other: "other", suspicious: "suspicious" } as const;
 const STATUS_DE: Record<ProcessedMail["status"], string> = {
   awaiting_approval: "Entwurf wartet auf Freigabe",
   needs_review: "in die Prüfliste gelegt",
@@ -63,16 +66,34 @@ const STATUS_DE: Record<ProcessedMail["status"], string> = {
   discarded: "verworfen",
   resolved: "erledigt",
 };
+const STATUS_EN: Record<ProcessedMail["status"], string> = {
+  awaiting_approval: "draft awaiting approval",
+  needs_review: "put on the review list",
+  quarantined: "put in quarantine",
+  filed: "filed",
+  approved: "approved",
+  delivery_failed: "sending failed",
+  sent: "sent",
+  discarded: "discarded",
+  resolved: "done",
+};
 const STEP_DE = { classify: "Einordnen", extract_invoice: "Beleg auslesen", draft_reply: "Entwurf" } as const;
+const STEP_EN = { classify: "Sort", extract_invoice: "Read document", draft_reply: "Draft" } as const;
 
 /** One sentence for the audit trail, readable for the owner. */
-function intakeSummary(record: ProcessedMail): string {
+function intakeSummary(record: ProcessedMail, locale: Locale): string {
+  const en = locale === "en";
   const steps = record.steps.map((s) => {
     const readFailed = s.step === "extract_invoice" && s.ok && record.invoice && !record.invoice.extraction.readable;
-    const outcome = !s.ok ? "fehlgeschlagen" : readFailed ? "Beleg nicht lesbar" : "erledigt";
-    return `${STEP_DE[s.step]}: ${outcome}`;
+    const outcome = en
+      ? !s.ok ? "failed" : readFailed ? "document not readable" : "done"
+      : !s.ok ? "fehlgeschlagen" : readFailed ? "Beleg nicht lesbar" : "erledigt";
+    return `${(en ? STEP_EN : STEP_DE)[s.step]}: ${outcome}`;
   });
-  return `Als ${CATEGORY_DE[record.category]} eingeordnet, ${STATUS_DE[record.status]}.${steps.length ? ` ${steps.join("; ")}.` : ""}`;
+  const tail = steps.length ? ` ${steps.join("; ")}.` : "";
+  return en
+    ? `Sorted as ${CATEGORY_EN[record.category]}, ${STATUS_EN[record.status]}.${tail}`
+    : `Als ${CATEGORY_DE[record.category]} eingeordnet, ${STATUS_DE[record.status]}.${tail}`;
 }
 
 /** Only resume URLs that point at the configured n8n instance are accepted (no SSRF through ingest). */
@@ -106,6 +127,15 @@ export class InboxService {
     return this.deps.llm.mode;
   }
 
+  /** Language of the tenant: texts the owner reads (errors, audit trail) follow it. */
+  get locale(): Locale {
+    return this.deps.tenant.locale;
+  }
+
+  private say(de: string, en: string): string {
+    return pick(this.deps.tenant.locale, de, en);
+  }
+
   private event(mailId: string | null, actor: AuditEvent["actor"], action: string, detail = ""): void {
     this.deps.store.addEvent({ mailId, at: this.now().toISOString(), actor, action, detail });
   }
@@ -115,9 +145,9 @@ export class InboxService {
   }
 
   private require(id: string): ProcessedMail {
-    if (!/^[0-9a-f]{20}$/.test(id)) throw new ServiceError(404, "Mail nicht gefunden");
+    if (!/^[0-9a-f]{20}$/.test(id)) throw new ServiceError(404, this.say("Mail nicht gefunden", "Mail not found"));
     const record = this.deps.store.getMail(id);
-    if (!record) throw new ServiceError(404, "Mail nicht gefunden");
+    if (!record) throw new ServiceError(404, this.say("Mail nicht gefunden", "Mail not found"));
     return record;
   }
 
@@ -131,9 +161,9 @@ export class InboxService {
     const resumeUrl = opts.resumeUrl ? validateResumeUrl(opts.resumeUrl, this.deps.config.n8nBaseUrl) : null;
     let parsed;
     try {
-      parsed = await parseEml(raw);
+      parsed = await parseEml(raw, this.locale);
     } catch (error) {
-      throw new ServiceError(error instanceof Error && error.message.includes("15 MB") ? 413 : 422, "Mail konnte nicht gelesen werden");
+      throw new ServiceError(error instanceof Error && error.message.includes("15 MB") ? 413 : 422, this.say("Mail konnte nicht gelesen werden", "Mail could not be read"));
     }
     // The Message-ID is chosen by the sender. The same Message-ID with the same bytes is a
     // re-delivery (idempotent); with other bytes it is a different mail that must not be dropped.
@@ -149,7 +179,10 @@ export class InboxService {
       intakeFindings.push({
         code: "message_id_collision",
         severity: "warning",
-        message: "Eine andere Mail mit derselben Message-ID ist schon eingegangen. Beide Mails vergleichen, eine davon ist vermutlich gefälscht.",
+        message: this.say(
+          "Eine andere Mail mit derselben Message-ID ist schon eingegangen. Beide Mails vergleichen, eine davon ist vermutlich gefälscht.",
+          "Another mail with the same Message-ID has already arrived. Compare both mails, one of them is probably forged.",
+        ),
       });
     }
     const record = await processMail(parsed, {
@@ -166,7 +199,7 @@ export class InboxService {
 
     mkdirSync(join(this.deps.config.dataDir, "raw"), { recursive: true });
     writeFileSync(this.rawPath(record.id), raw);
-    this.event(record.id, opts.actor, "eingang", intakeSummary(record));
+    this.event(record.id, opts.actor, "eingang", intakeSummary(record, this.locale));
     return { record, created: true };
   }
 
@@ -228,24 +261,26 @@ export class InboxService {
   }
 
   dashboard(days: 7 | 14): DashboardData {
-    return buildDashboard(this.deps.store.listMails(), days, localDate(this.now().toISOString()));
+    const tz = this.deps.tenant.timeZone;
+    return buildDashboard(this.deps.store.listMails(), days, localDate(this.now().toISOString(), tz), { timeZone: tz, locale: this.locale });
   }
 
   weekly(weekStart?: string): WeeklySummary & { weeks: string[] } {
     const records = this.deps.store.listMails();
-    const weeks = [...new Set(records.map((r) => weekStartOf(localDate(r.mail.date))))].sort();
-    const start = weekStart ? weekStartOf(weekStart) : (weeks.at(-1) ?? weekStartOf(localDate(this.now().toISOString())));
-    return { ...buildWeeklySummary(records, start, this.deps.tenant.suppliers), weeks };
+    const tz = this.deps.tenant.timeZone;
+    const weeks = [...new Set(records.map((r) => weekStartOf(localDate(r.mail.date, tz))))].sort();
+    const start = weekStart ? weekStartOf(weekStart) : (weeks.at(-1) ?? weekStartOf(localDate(this.now().toISOString(), tz)));
+    return { ...buildWeeklySummary(records, start, this.deps.tenant.suppliers, { timeZone: tz, locale: this.locale }), weeks };
   }
 
   /** Returns an accepted attachment. Rejected attachments are never served. */
   async attachment(id: string, index: number): Promise<{ filename: string; content: Buffer; mediaType: DocumentMediaType }> {
     const record = this.require(id);
     const info = record.mail.attachments.find((a) => a.index === index);
-    if (!info || !info.accepted || !existsSync(this.rawPath(id))) throw new ServiceError(404, "Anhang nicht verfügbar");
-    const parsed = await parseEml(readFileSync(this.rawPath(id)));
+    if (!info || !info.accepted || !existsSync(this.rawPath(id))) throw new ServiceError(404, this.say("Anhang nicht verfügbar", "Attachment not available"));
+    const parsed = await parseEml(readFileSync(this.rawPath(id)), this.locale);
     const file = parsed.files.get(index);
-    if (!file) throw new ServiceError(404, "Anhang nicht verfügbar");
+    if (!file) throw new ServiceError(404, this.say("Anhang nicht verfügbar", "Attachment not available"));
     return { filename: info.filename, content: file.content, mediaType: file.mediaType };
   }
 
@@ -259,27 +294,29 @@ export class InboxService {
    */
   async requestReply(id: string): Promise<ProcessedMail> {
     const record = this.require(id);
-    const blocked = replyBlocked(record);
+    const blocked = replyBlocked(record, this.locale);
     if (blocked) throw new ServiceError(409, blocked);
-    if (this.drafting.has(id)) throw new ServiceError(409, "Der Entwurf wird gerade geschrieben.");
+    if (this.drafting.has(id)) throw new ServiceError(409, this.say("Der Entwurf wird gerade geschrieben.", "The draft is being written right now."));
     this.drafting.add(id);
     try {
       const from = record.status;
-      const notes = replyNotes(record);
+      const notes = replyNotes(record, this.locale);
       const steps: ModelStep[] = [];
       const result = await writeDraft(record.mail, { llm: this.deps.llm, tenant: this.deps.tenant, steps, request: { category: record.category, notes } });
       if (!result.ok) {
         this.event(id, "system", "entwurf_fehlgeschlagen", result.finding.message);
         throw new ServiceError(
           502,
-          this.deps.llm.mode === "mock" ? "Im Testmodus gibt es für diese Mail keine feste Antwort." : "Der Entwurf konnte nicht geschrieben werden. Bitte noch einmal versuchen.",
+          this.deps.llm.mode === "mock"
+            ? this.say("Im Testmodus gibt es für diese Mail keine feste Antwort.", "In mock mode there is no fixed answer for this mail.")
+            : this.say("Der Entwurf konnte nicht geschrieben werden. Bitte noch einmal versuchen.", "The draft could not be written. Please try again."),
         );
       }
       // The mail may have changed while the model was writing (filed or closed in a second tab).
       // Claim it atomically; if it moved on, the draft is dropped and nothing changes.
       const now = this.now().toISOString();
       if (!this.deps.store.transition(id, [from], "awaiting_approval", now)) {
-        throw new ServiceError(409, "Die Mail hat sich inzwischen geändert. Bitte neu laden.");
+        throw new ServiceError(409, this.say("Die Mail hat sich inzwischen geändert. Bitte neu laden.", "The mail has changed in the meantime. Please reload."));
       }
       const fresh = this.require(id);
       fresh.status = "awaiting_approval";
@@ -287,7 +324,14 @@ export class InboxService {
       fresh.steps = [...fresh.steps.filter((s) => s.step !== "draft_reply"), ...steps];
       this.save(fresh);
       const hints = result.findings.filter((f) => f.severity !== "info").length;
-      this.event(id, "owner", "antwort_angefordert", hints === 0 ? "Entwurf geschrieben, ohne Hinweis" : `Entwurf geschrieben, ${hints === 1 ? "1 Hinweis" : `${hints} Hinweise`}`);
+      this.event(
+        id,
+        "owner",
+        "antwort_angefordert",
+        hints === 0
+          ? this.say("Entwurf geschrieben, ohne Hinweis", "Draft written, no flags")
+          : this.say(`Entwurf geschrieben, ${hints === 1 ? "1 Hinweis" : `${hints} Hinweise`}`, `Draft written, ${hints === 1 ? "1 flag" : `${hints} flags`}`),
+      );
       return fresh;
     } finally {
       this.drafting.delete(id);
@@ -296,7 +340,7 @@ export class InboxService {
 
   saveDraft(id: string, edit: { subject: string; body: string }): ProcessedMail {
     const record = this.require(id);
-    if (record.status !== "awaiting_approval" || !record.draft) throw new ServiceError(409, "Kein offener Entwurf");
+    if (record.status !== "awaiting_approval" || !record.draft) throw new ServiceError(409, this.say("Kein offener Entwurf", "No open draft"));
     record.draft.draft = { ...record.draft.draft, subject: edit.subject, body: edit.body };
     record.draft.editedAt = this.now().toISOString();
     // Re-run the fact check on the edited text so the owner sees what is still unsupported.
@@ -311,7 +355,7 @@ export class InboxService {
 
   async approve(id: string, edit: { subject: string; body: string }): Promise<ProcessedMail> {
     let record = this.require(id);
-    if (record.status !== "awaiting_approval" || !record.draft) throw new ServiceError(409, "Kein offener Entwurf");
+    if (record.status !== "awaiting_approval" || !record.draft) throw new ServiceError(409, this.say("Kein offener Entwurf", "No open draft"));
     const changed = edit.subject !== record.draft.draft.subject || edit.body !== record.draft.draft.body;
     if (changed) record = this.saveDraft(id, edit);
 
@@ -319,7 +363,7 @@ export class InboxService {
     // second tab) finds it no longer awaiting approval and gets 409: nothing is sent twice.
     const now = this.now().toISOString();
     if (!this.deps.store.transition(id, ["awaiting_approval"], "approved", now)) {
-      throw new ServiceError(409, "Kein offener Entwurf");
+      throw new ServiceError(409, this.say("Kein offener Entwurf", "No open draft"));
     }
     record.status = "approved";
     // A requested reply has no n8n run waiting for it (that run ended when the mail was filed or put on the
@@ -337,14 +381,14 @@ export class InboxService {
       delivery: (record.resumeUrl && !requested ? "n8n" : "outbox-folder") as "n8n" | "outbox-folder",
     };
     this.deps.store.putOutbox(entry);
-    this.event(id, "owner", "freigegeben", changed ? "mit Änderungen" : "unverändert");
+    this.event(id, "owner", "freigegeben", changed ? this.say("mit Änderungen", "with changes") : this.say("unverändert", "unchanged"));
 
     if (entry.delivery === "outbox-folder") {
       try {
         await this.writeOutboxFile(entry);
       } catch (error) {
         this.deps.store.transition(id, ["approved"], "delivery_failed", this.now().toISOString());
-        this.event(id, "system", "versand_fehlgeschlagen", "Ausgangsordner nicht beschreibbar");
+        this.event(id, "system", "versand_fehlgeschlagen", this.say("Ausgangsordner nicht beschreibbar", "Outbox folder not writable"));
         throw error;
       }
       // The owner may have discarded while the file was being written. Only an atomic
@@ -353,8 +397,8 @@ export class InboxService {
       const after = statusAfterReply(record, "sent");
       if (!this.deps.store.transition(id, ["approved"], after, this.now().toISOString())) {
         rmSync(this.outboxPath(id), { force: true });
-        this.event(id, "system", "versand_abgebrochen", "Während des Schreibens verworfen, Antwort aus dem Ausgangsordner entfernt");
-        throw new ServiceError(409, "Inzwischen verworfen, nichts versendet");
+        this.event(id, "system", "versand_abgebrochen", this.say("Während des Schreibens verworfen, Antwort aus dem Ausgangsordner entfernt", "Discarded while writing, reply removed from the outbox folder"));
+        throw new ServiceError(409, this.say("Inzwischen verworfen, nichts versendet", "Discarded in the meantime, nothing sent"));
       }
       this.deps.store.markDelivered(id, now);
       if (requested) {
@@ -362,7 +406,7 @@ export class InboxService {
         sent.draft!.requested!.sentAt = now;
         this.save(sent);
       }
-      this.event(id, "system", "versendet", "in den Ausgangsordner geschrieben");
+      this.event(id, "system", "versendet", this.say("in den Ausgangsordner geschrieben", "written to the outbox folder"));
       return this.require(id);
     }
 
@@ -392,15 +436,15 @@ export class InboxService {
           "system",
           "n8n_nicht_erreichbar",
           res.status === 404
-            ? "n8n kennt den wartenden Ablauf nicht mehr (HTTP 404, vermutlich abgelaufen)."
-            : `n8n hat die Fortsetzung abgelehnt (HTTP ${res.status}).`,
+            ? this.say("n8n kennt den wartenden Ablauf nicht mehr (HTTP 404, vermutlich abgelaufen).", "n8n no longer knows the waiting run (HTTP 404, probably expired).")
+            : this.say(`n8n hat die Fortsetzung abgelehnt (HTTP ${res.status}).`, `n8n refused to resume (HTTP ${res.status}).`),
         );
         return false;
       }
       this.event(record.id, "system", "n8n_fortgesetzt", `HTTP ${res.status}`);
       return true;
     } catch {
-      this.event(record.id, "system", "n8n_nicht_erreichbar", "Keine Verbindung zu n8n.");
+      this.event(record.id, "system", "n8n_nicht_erreichbar", this.say("Keine Verbindung zu n8n.", "No connection to n8n."));
       return false;
     }
   }
@@ -409,7 +453,7 @@ export class InboxService {
   async retryDelivery(id: string): Promise<ProcessedMail> {
     const record = this.require(id);
     if (!record.resumeUrl || !this.deps.store.transition(id, ["delivery_failed"], "approved", this.now().toISOString())) {
-      throw new ServiceError(409, "Kein fehlgeschlagener Versand");
+      throw new ServiceError(409, this.say("Kein fehlgeschlagener Versand", "No failed sending"));
     }
     record.status = "approved";
     this.event(id, "owner", "erneut_senden");
@@ -448,13 +492,13 @@ export class InboxService {
     // A requested reply that is discarded leaves the mail as it was before the request.
     const after = statusAfterReply(record, "discarded");
     if (!this.deps.store.transition(id, allowed, after, this.now().toISOString())) {
-      throw new ServiceError(409, "Kein offener Entwurf");
+      throw new ServiceError(409, this.say("Kein offener Entwurf", "No open draft"));
     }
     if (record.draft?.requested) {
       const back = this.require(id);
       back.draft = null;
       this.save(back);
-      this.event(id, "owner", "verworfen", after === "discarded" ? reason : `${reason}. Mail wieder ${STATUS_DE[after]}`);
+      this.event(id, "owner", "verworfen", after === "discarded" ? reason : this.say(`${reason}. Mail wieder ${STATUS_DE[after]}`, `${reason}. Mail back to ${STATUS_EN[after]}`));
       return back;
     }
     record.status = "discarded";
@@ -466,10 +510,10 @@ export class InboxService {
 
   resolveReview(id: string, action: "file" | "close", note: string): ProcessedMail {
     const record = this.require(id);
-    if (record.status !== "needs_review" && record.status !== "quarantined") throw new ServiceError(409, "Nicht in der Prüfliste");
+    if (record.status !== "needs_review" && record.status !== "quarantined") throw new ServiceError(409, this.say("Nicht in der Prüfliste", "Not on the review list"));
     if (action === "file") {
       if (record.status === "quarantined" || record.category !== "invoice" || !record.invoice?.extraction.readable) {
-        throw new ServiceError(409, "Nur lesbare Rechnungen können nach Prüfung abgelegt werden");
+        throw new ServiceError(409, this.say("Nur lesbare Rechnungen können nach Prüfung abgelegt werden", "Only readable invoices can be filed after review"));
       }
       record.status = "filed";
     } else {
@@ -486,7 +530,7 @@ export class InboxService {
     const record = this.require(id);
     const entry = this.deps.store.getOutbox(id);
     if (record.status !== "approved" || !entry || entry.deliveredAt) {
-      throw new ServiceError(409, `Nichts zu versenden (Status ${record.status})`);
+      throw new ServiceError(409, this.say(`Nichts zu versenden (Status ${record.status})`, `Nothing to send (status ${record.status})`));
     }
     return {
       mail_id: id,
@@ -504,11 +548,18 @@ export class InboxService {
     // "discarded" with an undelivered outbox entry: the owner discarded while n8n was already
     // sending. The confirmation is recorded anyway, the log has to tell the truth.
     const late = record.status === "discarded" && entry !== null && !entry.deliveredAt;
-    if (record.status !== "approved" && !late) throw new ServiceError(409, `Nicht freigegeben (Status ${record.status})`);
+    if (record.status !== "approved" && !late) throw new ServiceError(409, this.say(`Nicht freigegeben (Status ${record.status})`, `Not approved (status ${record.status})`));
     this.deps.store.markDelivered(id, this.now().toISOString());
     record.status = "sent";
     this.save(record);
-    this.event(id, actor, "versendet", late ? "Zustellung über n8n bestätigt, obwohl inzwischen verworfen" : "Zustellung über n8n bestätigt");
+    this.event(
+      id,
+      actor,
+      "versendet",
+      late
+        ? this.say("Zustellung über n8n bestätigt, obwohl inzwischen verworfen", "Delivery via n8n confirmed, although discarded in the meantime")
+        : this.say("Zustellung über n8n bestätigt", "Delivery via n8n confirmed"),
+    );
     return record;
   }
 
@@ -521,8 +572,8 @@ export class InboxService {
   }
 
   private async extractContract(content: Buffer, filename: string): Promise<ContractExtraction> {
-    const verdict = inspectAttachment({ filename, contentType: "application/octet-stream", content });
-    if (!verdict.accepted || !verdict.kind) throw new ServiceError(422, `${filename}: ${verdict.reason ?? "nicht lesbar"}`);
+    const verdict = inspectAttachment({ filename, contentType: "application/octet-stream", content }, this.locale);
+    if (!verdict.accepted || !verdict.kind) throw new ServiceError(422, `${filename}: ${verdict.reason ?? this.say("nicht lesbar", "not readable")}`);
     const call = await this.deps.llm.extractContract({
       content,
       sha256: sha256(content),
@@ -531,13 +582,13 @@ export class InboxService {
     });
     if (!call.ok) throw new ServiceError(502, `${filename}: ${call.error}`);
     const parsed = ContractExtractionSchema.safeParse(call.data);
-    if (!parsed.success) throw new ServiceError(502, `${filename}: Modellantwort passt nicht zum Schema`);
+    if (!parsed.success) throw new ServiceError(502, `${filename}: ${this.say("Modellantwort passt nicht zum Schema", "the model's answer does not match the schema")}`);
     return parsed.data;
   }
 
   async reconcileSample(id: string): Promise<ReconcileResult> {
     const sample = this.contractSamples().find((s) => s.id === id);
-    if (!sample) throw new ServiceError(404, "Beispiel nicht gefunden");
+    if (!sample) throw new ServiceError(404, this.say("Beispiel nicht gefunden", "Sample not found"));
     const dir = this.deps.config.contractSamplesDir;
     return this.reconcileFiles(
       { filename: sample.quote, content: readFileSync(join(dir, sample.quote)) },
@@ -554,7 +605,15 @@ export class InboxService {
       this.extractContract(order.content, safeFilename(order.filename)),
     ]);
     const result = reconcile(q, o);
-    this.event(null, "owner", "abgleich", `${q.document_number ?? "?"} gegen ${o.document_number ?? "?"}: ${result.discrepancyCount} Abweichungen`);
+    this.event(
+      null,
+      "owner",
+      "abgleich",
+      this.say(
+        `${q.document_number ?? "?"} gegen ${o.document_number ?? "?"}: ${result.discrepancyCount} Abweichungen`,
+        `${q.document_number ?? "?"} against ${o.document_number ?? "?"}: ${result.discrepancyCount} discrepancies`,
+      ),
+    );
     return result;
   }
 }

@@ -7,6 +7,7 @@ import { Button } from "./components/ui/button";
 import { Skeleton } from "./components/ui/misc";
 import { ToastProvider } from "./components/ui/toast";
 import { TooltipProvider } from "./components/ui/tooltip";
+import { ROUTES, t } from "./i18n";
 import { api, navigate, onUnauthorized, setCsrfToken, usePath } from "./lib";
 import { LoginPage, type Session } from "./pages/Login";
 
@@ -20,7 +21,7 @@ const WeeklyPage = lazy(() => import("./pages/Weekly").then((m) => ({ default: m
 function ViewSkeleton() {
   return (
     <PageScroll>
-      <div aria-busy="true" aria-label="Wird geladen" className="flex flex-col gap-4">
+      <div aria-busy="true" aria-label={t("Wird geladen", "Loading")} className="flex flex-col gap-4">
         <Skeleton className="h-9 w-56 rounded-full" />
         <div className="grid gap-4 lg:grid-cols-12">
           <Skeleton className="h-[360px] rounded-[28px] lg:col-span-7" />
@@ -44,8 +45,8 @@ class PageBoundary extends Component<{ path: string; children: ReactNode }, { fa
     if (!this.state.failed) return this.props.children;
     return (
       <PageScroll>
-        <EmptyState icon={MailQuestion} title="Diese Ansicht konnte nicht angezeigt werden.">
-          Die Daten sind nicht betroffen. Bitte neu laden.
+        <EmptyState icon={MailQuestion} title={t("Diese Ansicht konnte nicht angezeigt werden.", "This view could not be shown.")}>
+          {t("Die Daten sind nicht betroffen. Bitte neu laden.", "Your data is safe. Please reload.")}
         </EmptyState>
       </PageScroll>
     );
@@ -53,22 +54,22 @@ class PageBoundary extends Component<{ path: string; children: ReactNode }, { fa
 }
 
 function NotFoundPage() {
-  usePageTitle("Seite nicht gefunden");
+  usePageTitle(t("Seite nicht gefunden", "Page not found"));
   return (
     <PageScroll className="grid min-h-full place-items-center">
       <EmptyState
         icon={MailQuestion}
-        title="Diese Seite gibt es nicht."
+        title={t("Diese Seite gibt es nicht.", "This page does not exist.")}
         action={
           <div className="flex flex-wrap justify-center gap-2">
-            <Button variant="primary" onClick={() => navigate("/")}>
-              Zur Übersicht
+            <Button variant="primary" onClick={() => navigate(ROUTES.overview)}>
+              {t("Zur Übersicht", "To overview")}
             </Button>
-            <Button onClick={() => navigate("/freigabe")}>Zum Posteingang</Button>
+            <Button onClick={() => navigate(ROUTES.approval)}>{t("Zum Posteingang", "To inbox")}</Button>
           </div>
         }
       >
-        Der Link ist veraltet.
+        {t("Der Link ist veraltet.", "The link is out of date.")}
       </EmptyState>
     </PageScroll>
   );
@@ -76,14 +77,14 @@ function NotFoundPage() {
 
 function RouteSwitch({ path }: { path: string }) {
   const id = path.split("/")[2];
-  if (path === "/") return <OverviewPage />;
-  if (path === "/freigabe" || path.startsWith("/freigabe/")) return <MailboxPage tab="freigabe" selectedId={id} />;
-  if (path === "/pruefliste" || path.startsWith("/pruefliste/")) return <MailboxPage tab="pruefen" selectedId={id} />;
-  if (path === "/posteingang") return <MailboxPage tab="alle" />;
-  if (path.startsWith("/mail/")) return <MailboxPage tab="alle" selectedId={id ?? ""} />;
-  if (path === "/rechnungen") return <InvoicesPage />;
-  if (path === "/abgleich") return <ReconcilePage />;
-  if (path === "/woche") return <WeeklyPage />;
+  if (path === ROUTES.overview) return <OverviewPage />;
+  if (path === ROUTES.approval || path.startsWith(`${ROUTES.approval}/`)) return <MailboxPage tab="freigabe" selectedId={id} />;
+  if (path === ROUTES.review || path.startsWith(`${ROUTES.review}/`)) return <MailboxPage tab="pruefen" selectedId={id} />;
+  if (path === ROUTES.inbox) return <MailboxPage tab="alle" />;
+  if (path.startsWith(`${ROUTES.mail}/`)) return <MailboxPage tab="alle" selectedId={id ?? ""} />;
+  if (path === ROUTES.invoices) return <InvoicesPage />;
+  if (path === ROUTES.reconcile) return <ReconcilePage />;
+  if (path === ROUTES.week) return <WeeklyPage />;
   return <NotFoundPage />;
 }
 
@@ -109,13 +110,27 @@ export function App() {
       setDemoPassword(s.demoPassword ?? null);
       setSession(s);
     });
-    return onUnauthorized(() => setSession((s) => (s ? { ...s, authenticated: false, csrfToken: null } : s)));
+    return onUnauthorized(() => {
+      setSession((s) => (s ? { ...s, authenticated: false, csrfToken: null } : s));
+      loadDemoPassword();
+    });
   }, []);
+
+  // A page opened while signed in has no demo password yet (the server only sends it to visitors who are
+  // signed out), so it is fetched once the visitor is signed out again.
+  const loadDemoPassword = () => {
+    api<Session>("/api/auth/session")
+      .then((s) => {
+        if (!s.authenticated) setDemoPassword(s.demoPassword ?? null);
+      })
+      .catch(() => {});
+  };
 
   const logout = async () => {
     await api("/api/auth/logout", { method: "POST" }).catch(() => {});
     setCsrfToken(null);
     setSession((s) => (s ? { ...s, authenticated: false, csrfToken: null } : s));
+    loadDemoPassword();
   };
 
   return (

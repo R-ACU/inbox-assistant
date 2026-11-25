@@ -5,6 +5,7 @@
  */
 import { animate, useReducedMotion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { INTL_LOCALE } from "../i18n";
 
 /** Selection pills and sliding marks. Settles in about 250 ms with a hint of bounce. */
 export const spring = { type: "spring", duration: 0.32, bounce: 0.18 } as const;
@@ -52,7 +53,7 @@ export function useCountUp(id: string, value: number, duration = 0.9): number {
 }
 
 /** A number that counts up once. `id` names it for the whole app (for example "overview.mails"), so it never counts twice. */
-export function CountUp({ id, value, format = (v) => Math.round(v).toLocaleString("de-DE"), duration }: { id: string; value: number; format?: (v: number) => string; duration?: number }) {
+export function CountUp({ id, value, format = (v) => Math.round(v).toLocaleString(INTL_LOCALE), duration }: { id: string; value: number; format?: (v: number) => string; duration?: number }) {
   const shown = useCountUp(id, value, duration);
   return (
     <span className="tnum">

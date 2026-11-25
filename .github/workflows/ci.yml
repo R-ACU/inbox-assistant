@@ -25,11 +25,15 @@ jobs:
         run: npm test
       - name: Eval (mock mode, pipeline test)
         run: npm run eval
+      - name: Eval of the English test set (mock mode, pipeline test)
+        run: npm run eval
+        env:
+          APP_LOCALE: en
       - name: Fixtures are reproducible
         run: |
           npx playwright install --with-deps chromium
           npm run fixtures
-          git diff --exit-code -- fixtures/model/responses.json fixtures/expected.json fixtures/contracts fixtures/mails
+          git diff --exit-code -- fixtures/model/responses.json fixtures/expected.json fixtures/contracts fixtures/mails fixtures/en
       - name: End-to-end tests (headless Chromium)
         run: npm run test:e2e
       - name: No leftover test code

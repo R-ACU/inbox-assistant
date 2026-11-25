@@ -5,6 +5,7 @@
 import { ArrowLeft, MailOpen } from "lucide-react";
 import { LayoutGroup, motion } from "motion/react";
 import type { ReactNode } from "react";
+import { t } from "../../i18n";
 import { navigate } from "../../lib";
 import { cn } from "../../utils";
 import { Link } from "../common";
@@ -103,7 +104,7 @@ export function ReaderEmpty({ title, icon: Icon = MailOpen, children }: { title:
           <p className="mt-4 text-[16px] font-semibold text-ink">{title}</p>
           {children && <div className="mt-1.5 text-[13.5px] leading-relaxed text-ink-2">{children}</div>}
           <p className="mt-6 inline-flex items-center gap-2 text-[12.5px] text-ink-3">
-            <Kbd>j</Kbd> <Kbd>k</Kbd> blättern
+            <Kbd>j</Kbd> <Kbd>k</Kbd> {t("blättern", "browse")}
           </p>
         </motion.div>
       </div>

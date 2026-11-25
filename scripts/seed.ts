@@ -1,6 +1,7 @@
 /**
  * Fills the local database with the 20 test mails plus 2 demo extras, using
- * the mock model answers (never the real API). Mails are processed in the
+ * the mock model answers (never the real API). APP_LOCALE=en loads the English
+ * test set (fixtures/en/) for the Irish tenant instead of the German one. Mails are processed in the
  * order they arrived, so duplicate checks see the same state as in real use.
  * Usage: npm run seed                       add missing mails
  *        npm run seed -- --reset            start from an empty database
@@ -18,9 +19,9 @@ import { fixtureShift, shiftedEml } from "./demo-clock";
 import { MockProvider } from "../src/llm/mock";
 import { loadLocalEnv } from "../src/server/bootstrap";
 import { loadConfig } from "../src/server/config";
+import { tenantFor } from "../src/tenant";
 import { InboxService } from "../src/server/service";
 import { Store } from "../src/server/store";
-import { TENANT } from "../src/tenant/profile";
 
 loadLocalEnv();
 const config = loadConfig();
@@ -33,7 +34,7 @@ if (process.argv.includes("--reset")) {
 
 const skipArg = process.argv.indexOf("--skip");
 const skip = new Set(skipArg > -1 ? (process.argv[skipArg + 1] ?? "").split(",").map((x) => `${x.trim()}.eml`) : []);
-const mailDir = join(process.cwd(), "fixtures", "mails");
+const mailDir = join(config.fixturesDir, "mails");
 const files = [
   ...readdirSync(mailDir).filter((f) => f.endsWith(".eml") && !skip.has(f)).map((f) => join(mailDir, f)),
   ...(existsSync(join(mailDir, "extra")) ? readdirSync(join(mailDir, "extra")).map((f) => join(mailDir, "extra", f)) : []),
@@ -43,7 +44,7 @@ const files = [
 // later through n8n lands on the same day), then process in order of the Date header
 // and stamp each record a minute after it arrived, never later than now.
 const startedAt = new Date();
-const shift = fixtureShift(startedAt);
+const shift = fixtureShift(startedAt, config.fixturesDir);
 const mails = await Promise.all(
   files.map(async (file) => {
     const raw = shiftedEml(readFileSync(file), shift);
@@ -57,8 +58,8 @@ const store = new Store(dbPath);
 const service = new InboxService({
   config,
   store,
-  llm: MockProvider.fromFile(config.mockResponses, config.models),
-  tenant: TENANT,
+  llm: MockProvider.fromFile(config.mockResponses, config.models, config.locale),
+  tenant: tenantFor(config.locale),
   now: () => clock,
 });
 

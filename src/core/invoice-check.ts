@@ -4,9 +4,10 @@
  * invoice can be filed or has to go to the review list.
  */
 import type { InvoiceExtraction } from "../shared/schemas";
+import { pick, type Locale } from "../shared/locale";
 import type { Finding, InvoiceComputed } from "../shared/types";
 import { formatIban, isValidIban, normalizeIban } from "./iban";
-import { formatEur, lineCents, taxCents, toCents } from "./money";
+import { formatMoney, lineCents, taxCents, toCents } from "./money";
 
 export interface KnownSupplier {
   name: string;
@@ -24,6 +25,10 @@ export interface InvoiceCheckContext {
   existing: { supplier: string; invoiceNumber: string }[];
   /** Address the invoice came from. Checked against the supplier's known domains. */
   senderAddress?: string;
+  /** Language of the findings (default German). */
+  locale?: Locale;
+  /** VAT rates allowed on an invoice of this tenant (default the German ones). */
+  taxRates?: number[];
 }
 
 export interface InvoiceCheck {
@@ -33,7 +38,8 @@ export interface InvoiceCheck {
   supplier: KnownSupplier | null;
 }
 
-const ALLOWED_TAX_RATES = [0, 7, 19];
+/** German VAT rates; a tenant can bring its own (TenantProfile.taxRates). */
+const GERMAN_TAX_RATES = [0, 7, 19];
 /** Rounding per line can move the tax by a cent; more is an error. */
 const TAX_TOLERANCE_CENTS = 1;
 
@@ -41,7 +47,7 @@ export function normalizeCompany(name: string): string {
   return name
     .toLowerCase()
     .replace(/&/g, " und ")
-    .replace(/\b(gmbh|kg|co|ohg|ag|ug|e\.?k\.?|mbh|haftungsbeschränkt)\b/g, " ")
+    .replace(/\b(gmbh|kg|co|ohg|ag|ug|e\.?k\.?|mbh|haftungsbeschränkt|ltd|limited|plc|dac)\b/g, " ")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 }
@@ -93,33 +99,37 @@ function daysBetween(a: string, b: string): number {
 
 export function checkInvoice(ex: InvoiceExtraction, ctx: InvoiceCheckContext): InvoiceCheck {
   const findings: Finding[] = [];
-  const add = (code: string, severity: Finding["severity"], message: string) =>
-    findings.push({ code, severity, message });
+  const locale = ctx.locale ?? "de";
+  const allowedRates = ctx.taxRates ?? GERMAN_TAX_RATES;
+  const fmt = (cents: number) => formatMoney(cents, locale);
+  const add = (code: string, severity: Finding["severity"], de: string, en: string) =>
+    findings.push({ code, severity, message: pick(locale, de, en) });
 
   if (!ex.readable) {
     add(
       "unreadable",
       "error",
       `Beleg nicht sicher lesbar${ex.unreadable_reason ? `: ${ex.unreadable_reason}` : "."} Bitte von Hand prüfen.`,
+      `Document not reliably readable${ex.unreadable_reason ? `: ${ex.unreadable_reason}` : "."} Please check it by hand.`,
     );
     return { ok: false, findings, computed: null, supplier: null };
   }
 
-  const required: [keyof InvoiceExtraction, string][] = [
-    ["supplier_name", "Lieferant"],
-    ["invoice_number", "Rechnungsnummer"],
-    ["invoice_date", "Rechnungsdatum"],
-    ["net_total", "Nettobetrag"],
-    ["tax_rate_percent", "Steuersatz"],
-    ["tax_total", "Steuerbetrag"],
-    ["gross_total", "Bruttobetrag"],
+  const required: [keyof InvoiceExtraction, string, string][] = [
+    ["supplier_name", "Lieferant", "supplier"],
+    ["invoice_number", "Rechnungsnummer", "invoice number"],
+    ["invoice_date", "Rechnungsdatum", "invoice date"],
+    ["net_total", "Nettobetrag", "net total"],
+    ["tax_rate_percent", "Steuersatz", "VAT rate"],
+    ["tax_total", "Steuerbetrag", "VAT amount"],
+    ["gross_total", "Bruttobetrag", "gross total"],
   ];
-  for (const [key, label] of required) {
-    if (ex[key] === null) add("missing_field", "error", `Pflichtangabe fehlt: ${label}.`);
+  for (const [key, de, en] of required) {
+    if (ex[key] === null) add("missing_field", "error", `Pflichtangabe fehlt: ${de}.`, `Required field missing: ${en}.`);
   }
-  if (ex.line_items.length === 0) add("no_line_items", "error", "Keine Positionen erkannt.");
+  if (ex.line_items.length === 0) add("no_line_items", "error", "Keine Positionen erkannt.", "No line items found.");
   if (ex.currency !== null && ex.currency !== "EUR") {
-    add("currency", "error", `Währung ${ex.currency} wird nicht automatisch verbucht.`);
+    add("currency", "error", `Währung ${ex.currency} wird nicht automatisch verbucht.`, `Currency ${ex.currency} is not filed automatically.`);
   }
 
   // --- Arithmetic, all in cents ---------------------------------------------
@@ -135,7 +145,8 @@ export function checkInvoice(ex: InvoiceExtraction, ctx: InvoiceCheckContext): I
       add(
         "line_total_mismatch",
         "error",
-        `Position ${i + 1} (${line.description}): ${line.quantity} × Einzelpreis ergibt ${formatEur(expected)}, auf der Rechnung steht ${formatEur(printed)}.`,
+        `Position ${i + 1} (${line.description}): ${line.quantity} × Einzelpreis ergibt ${fmt(expected)}, auf der Rechnung steht ${fmt(printed)}.`,
+        `Line ${i + 1} (${line.description}): ${line.quantity} × unit price makes ${fmt(expected)}, the invoice says ${fmt(printed)}.`,
       );
     }
   });
@@ -150,11 +161,12 @@ export function checkInvoice(ex: InvoiceExtraction, ctx: InvoiceCheckContext): I
       add(
         "net_sum_mismatch",
         "error",
-        `Summe der Positionen ${formatEur(lineSum)} weicht vom ausgewiesenen Netto ${formatEur(net)} ab (Differenz ${formatEur(net - lineSum)}).`,
+        `Summe der Positionen ${fmt(lineSum)} weicht vom ausgewiesenen Netto ${fmt(net)} ab (Differenz ${fmt(net - lineSum)}).`,
+        `The line items add up to ${fmt(lineSum)}, the printed net total is ${fmt(net)} (difference ${fmt(net - lineSum)}).`,
       );
     }
-    if (ex.tax_rate_percent !== null && !ALLOWED_TAX_RATES.includes(ex.tax_rate_percent)) {
-      add("unusual_tax_rate", "error", `Ungewöhnlicher Steuersatz: ${ex.tax_rate_percent} %.`);
+    if (ex.tax_rate_percent !== null && !allowedRates.includes(ex.tax_rate_percent)) {
+      add("unusual_tax_rate", "error", `Ungewöhnlicher Steuersatz: ${ex.tax_rate_percent} %.`, `Unusual VAT rate: ${ex.tax_rate_percent}%.`);
     }
     if (tax !== null && ex.tax_rate_percent !== null) {
       const taxOnPrinted = taxCents(net, ex.tax_rate_percent);
@@ -162,7 +174,8 @@ export function checkInvoice(ex: InvoiceExtraction, ctx: InvoiceCheckContext): I
         add(
           "tax_mismatch",
           "error",
-          `${ex.tax_rate_percent} % auf ${formatEur(net)} ergeben ${formatEur(taxOnPrinted)}, ausgewiesen sind ${formatEur(tax)}.`,
+          `${ex.tax_rate_percent} % auf ${fmt(net)} ergeben ${fmt(taxOnPrinted)}, ausgewiesen sind ${fmt(tax)}.`,
+          `${ex.tax_rate_percent}% of ${fmt(net)} makes ${fmt(taxOnPrinted)}, the invoice says ${fmt(tax)}.`,
         );
       }
     }
@@ -170,17 +183,18 @@ export function checkInvoice(ex: InvoiceExtraction, ctx: InvoiceCheckContext): I
       add(
         "gross_mismatch",
         "error",
-        `Netto plus Steuer ergibt ${formatEur(net + tax)}, ausgewiesen sind ${formatEur(gross)} brutto.`,
+        `Netto plus Steuer ergibt ${fmt(net + tax)}, ausgewiesen sind ${fmt(gross)} brutto.`,
+        `Net plus VAT makes ${fmt(net + tax)}, the invoice says ${fmt(gross)} gross.`,
       );
     }
-    if (gross !== null && gross <= 0) add("non_positive", "warning", "Bruttobetrag ist null oder negativ (Gutschrift?).");
+    if (gross !== null && gross <= 0) add("non_positive", "warning", "Bruttobetrag ist null oder negativ (Gutschrift?).", "Gross total is zero or negative (credit note?).");
   }
 
   // --- Plausibility ----------------------------------------------------------
   if (ex.invoice_date) {
     const age = daysBetween(ex.invoice_date, ctx.today);
-    if (age < 0) add("date_in_future", "error", "Rechnungsdatum liegt in der Zukunft.");
-    else if (age > 365) add("date_too_old", "warning", "Rechnungsdatum ist älter als ein Jahr.");
+    if (age < 0) add("date_in_future", "error", "Rechnungsdatum liegt in der Zukunft.", "Invoice date is in the future.");
+    else if (age > 365) add("date_too_old", "warning", "Rechnungsdatum ist älter als ein Jahr.", "Invoice date is more than a year ago.");
   }
 
   // A supplier that is not in the master data cannot be checked against a known IBAN or
@@ -193,9 +207,15 @@ export function checkInvoice(ex: InvoiceExtraction, ctx: InvoiceCheckContext): I
         "supplier_lookalike",
         "error",
         `Lieferantenname ähnelt „${lookalike.name}“, ist aber nicht gleich. Möglicher Doppelgänger, vor jeder Zahlung beim bekannten Lieferanten nachfragen.`,
+        `Supplier name looks like “${lookalike.name}” but is not the same. Possible look-alike: check with the known supplier before any payment.`,
       );
     } else {
-      add("unknown_supplier", "error", "Lieferant ist nicht in den Stammdaten. Bankverbindung und Absender vor der Ablage prüfen.");
+      add(
+        "unknown_supplier",
+        "error",
+        "Lieferant ist nicht in den Stammdaten. Bankverbindung und Absender vor der Ablage prüfen.",
+        "Supplier is not in the master data. Check bank details and sender before filing.",
+      );
     }
   }
   if (supplier && ctx.senderAddress && supplier.domains.length > 0 && !domainMatches(ctx.senderAddress, supplier.domains)) {
@@ -203,16 +223,18 @@ export function checkInvoice(ex: InvoiceExtraction, ctx: InvoiceCheckContext): I
       "sender_domain_mismatch",
       "error",
       `Absender ${ctx.senderAddress} gehört nicht zu den bekannten Domains von ${supplier.name} (${supplier.domains.join(", ")}).`,
+      `Sender ${ctx.senderAddress} is not on the known domains of ${supplier.name} (${supplier.domains.join(", ")}).`,
     );
   }
   if (ex.iban) {
     if (!isValidIban(ex.iban)) {
-      add("invalid_iban", "error", `IBAN ${formatIban(ex.iban)} ist ungültig (Prüfziffer).`);
+      add("invalid_iban", "error", `IBAN ${formatIban(ex.iban)} ist ungültig (Prüfziffer).`, `IBAN ${formatIban(ex.iban)} is not valid (check digits).`);
     } else if (supplier && normalizeIban(supplier.iban) !== normalizeIban(ex.iban)) {
       add(
         "iban_changed",
         "error",
         `IBAN weicht von den Stammdaten ab (bekannt: ${formatIban(supplier.iban)}). Vor jeder Zahlung telefonisch bestätigen.`,
+        `IBAN differs from the master data (known: ${formatIban(supplier.iban)}). Confirm by phone before any payment.`,
       );
     }
   }
@@ -222,7 +244,7 @@ export function checkInvoice(ex: InvoiceExtraction, ctx: InvoiceCheckContext): I
     const dup = ctx.existing.some(
       (e) => normalizeCompany(e.supplier) === key && e.invoiceNumber.trim() === ex.invoice_number!.trim(),
     );
-    if (dup) add("duplicate_invoice", "error", "Diese Rechnungsnummer ist für den Lieferanten schon erfasst.");
+    if (dup) add("duplicate_invoice", "error", "Diese Rechnungsnummer ist für den Lieferanten schon erfasst.", "This invoice number is already on file for the supplier.");
   }
 
   const ok = !findings.some((f) => f.severity === "error");

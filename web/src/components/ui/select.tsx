@@ -6,6 +6,7 @@
 import { Check, ChevronDown } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { t } from "../../i18n";
 import { cn } from "../../utils";
 
 export interface Option<T extends string> {
@@ -102,7 +103,7 @@ export function Select<T extends string>({
         )}
       >
         {current?.icon}
-        <span className="min-w-0 flex-1 truncate">{current?.label ?? "Wird geladen"}</span>
+        <span className="min-w-0 flex-1 truncate">{current?.label ?? t("Wird geladen", "Loading")}</span>
         <ChevronDown className={cn("size-4 shrink-0 text-ink-3 transition-transform duration-200", open && "rotate-180")} aria-hidden />
       </button>
       <AnimatePresence>

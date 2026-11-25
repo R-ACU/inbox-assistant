@@ -3,18 +3,24 @@
  * Every number comes from the records; nothing is estimated or filled in.
  * The window ends today (the caller passes the business's calendar day).
  */
+import { pick, type Locale } from "../shared/locale";
 import { CATEGORIES, type Category } from "../shared/schemas";
 import type { DashboardData, DashboardOutcome, ProcessedMail } from "../shared/types";
 import { toCents } from "./money";
 import { settledStatus } from "./reply";
-import { localDate } from "./weekly";
+import { DEFAULT_TIME_ZONE, localDate } from "./weekly";
 
 const DAY = 86_400_000;
-const localHourFormat = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Berlin", hour: "2-digit", hourCycle: "h23" });
+const hourFormats = new Map<string, Intl.DateTimeFormat>();
 
 /** Hour of the day (0 to 23) in the business's time zone. */
-export function localHour(iso: string): number {
-  return Number(localHourFormat.format(new Date(iso))) % 24;
+export function localHour(iso: string, timeZone = DEFAULT_TIME_ZONE): number {
+  let format = hourFormats.get(timeZone);
+  if (!format) {
+    format = new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", hourCycle: "h23" });
+    hourFormats.set(timeZone, format);
+  }
+  return Number(format.format(new Date(iso))) % 24;
 }
 
 function addDays(dateIso: string, days: number): string {
@@ -47,7 +53,13 @@ const invoiceGross = (r: ProcessedMail) =>
 
 const OPEN = new Set<ProcessedMail["status"]>(["awaiting_approval", "needs_review", "quarantined", "delivery_failed"]);
 
-export function buildDashboard(records: ProcessedMail[], days: 7 | 14, today: string): DashboardData {
+export function buildDashboard(
+  records: ProcessedMail[],
+  days: 7 | 14,
+  today: string,
+  opts: { timeZone?: string; locale?: Locale } = {},
+): DashboardData {
+  const tz = opts.timeZone ?? DEFAULT_TIME_ZONE;
   const to = today;
   const from = addDays(to, -(days - 1));
   const prevFrom = addDays(from, -days);
@@ -55,11 +67,11 @@ export function buildDashboard(records: ProcessedMail[], days: 7 | 14, today: st
 
   const byDate = new Map<string, ProcessedMail[]>();
   for (const r of records) {
-    const d = localDate(r.mail.date);
+    const d = localDate(r.mail.date, tz);
     byDate.set(d, [...(byDate.get(d) ?? []), r]);
   }
   const inRange = (a: string, b: string) => records.filter((r) => {
-    const d = localDate(r.mail.date);
+    const d = localDate(r.mail.date, tz);
     return d >= a && d <= b;
   });
   const current = inRange(from, to);
@@ -94,7 +106,7 @@ export function buildDashboard(records: ProcessedMail[], days: 7 | 14, today: st
   // One row per day of the window, one column per hour of the day (local time).
   const heatmap = dayList.map((d) => {
     const row = Array.from({ length: 24 }, () => 0);
-    for (const r of byDate.get(d.date) ?? []) row[localHour(r.mail.date)]! += 1;
+    for (const r of byDate.get(d.date) ?? []) row[localHour(r.mail.date, tz)]! += 1;
     return row;
   });
 
@@ -113,10 +125,10 @@ export function buildDashboard(records: ProcessedMail[], days: 7 | 14, today: st
       status: r.status,
       reason:
         r.status === "awaiting_approval"
-          ? "Antwortentwurf wartet auf Freigabe"
+          ? pick(opts.locale, "Antwortentwurf wartet auf Freigabe", "Reply draft awaiting approval")
           : r.status === "delivery_failed"
-            ? "Freigegebene Antwort wurde nicht versendet"
-            : ((r.reviewReasons.find((f) => f.severity === "error") ?? r.reviewReasons[0])?.message ?? "Bitte prüfen"),
+            ? pick(opts.locale, "Freigegebene Antwort wurde nicht versendet", "Approved reply was not sent")
+            : ((r.reviewReasons.find((f) => f.severity === "error") ?? r.reviewReasons[0])?.message ?? pick(opts.locale, "Bitte prüfen", "Please check")),
     }));
 
   const recent = [...current]

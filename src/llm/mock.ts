@@ -7,6 +7,7 @@
  * unknown file gets an honest "no fixture" error instead of made-up data.
  */
 import { readFileSync } from "node:fs";
+import { pick, type Locale } from "../shared/locale";
 import type { InboundMail } from "../shared/types";
 import type { DocumentInput, DraftInput, LlmProvider, ModelCall, ModelConfig } from "./provider";
 import { DEFAULT_MODELS } from "./provider";
@@ -26,16 +27,17 @@ export class MockProvider implements LlmProvider {
   constructor(
     private readonly responses: MockResponses,
     private readonly models: ModelConfig = DEFAULT_MODELS,
+    private readonly locale: Locale = "de",
   ) {}
 
-  static fromFile(path: string, models?: ModelConfig): MockProvider {
-    return new MockProvider(JSON.parse(readFileSync(path, "utf8")) as MockResponses, models);
+  static fromFile(path: string, models?: ModelConfig, locale?: Locale): MockProvider {
+    return new MockProvider(JSON.parse(readFileSync(path, "utf8")) as MockResponses, models, locale);
   }
 
   private answer(table: Record<string, unknown>, key: string, model: string): ModelCall {
     const data = table[key];
     const name = `mock:${model}`;
-    if (data === undefined) return { ok: false, error: "Keine Mock-Antwort für diese Eingabe", model: name };
+    if (data === undefined) return { ok: false, error: pick(this.locale, "Keine Mock-Antwort für diese Eingabe", "No mock answer for this input"), model: name };
     return { ok: true, data: structuredClone(data), model: name, inputTokens: null, outputTokens: null };
   }
 

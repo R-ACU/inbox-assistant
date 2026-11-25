@@ -8,8 +8,13 @@ import { hashPassword, randomToken } from "./src/server/crypto";
 export const E2E_PORT = 3225;
 export const E2E_PASSWORD = "e2e-passwort-nur-fuer-tests";
 export const AUTH_FILE = join("test-results", ".auth", "owner.json");
+// The English deployment (APP_LOCALE=en) runs as a second server with its own port, data and password.
+export const E2E_EN_PORT = 3226;
+export const E2E_EN_PASSWORD = "e2e-english-password-for-tests";
 const dataDir = process.env.E2E_DATA_DIR ?? mkdtempSync(join(tmpdir(), "inbox-assistant-e2e-"));
 process.env.E2E_DATA_DIR = dataDir;
+const dataDirEn = process.env.E2E_DATA_DIR_EN ?? mkdtempSync(join(tmpdir(), "inbox-assistant-e2e-en-"));
+process.env.E2E_DATA_DIR_EN = dataDirEn;
 
 export default defineConfig({
   testDir: "e2e",
@@ -26,23 +31,43 @@ export default defineConfig({
   // Log in once and reuse the session: the login route allows only 5 attempts per minute.
   projects: [
     { name: "login", testMatch: /auth\.setup\.ts$/ },
-    { name: "app", dependencies: ["login"], use: { storageState: AUTH_FILE } },
+    { name: "app", dependencies: ["login"], testIgnore: /english\.spec\.ts$/, use: { storageState: AUTH_FILE } },
+    { name: "english", testMatch: /english\.spec\.ts$/, use: { baseURL: `http://127.0.0.1:${E2E_EN_PORT}`, locale: "en-IE" } },
   ],
-  webServer: {
-    command: "npx tsx scripts/seed.ts --reset && node --import tsx src/server/main.ts",
-    url: `http://127.0.0.1:${E2E_PORT}/api/health`,
-    reuseExistingServer: false,
-    timeout: 60_000,
-    env: {
-      PORT: String(E2E_PORT),
-      DATA_DIR: dataDir,
-      LLM_MODE: "mock",
-      APP_PASSWORD_HASH: hashPassword(E2E_PASSWORD),
-      INBOX_WEBHOOK_SECRET: randomToken(32),
-      APP_ORIGINS: `http://127.0.0.1:${E2E_PORT}`,
-      ANTHROPIC_API_KEY: "",
-      // Shows the demo-access card on the login page, as on the public demo.
-      PUBLIC_DEMO_PASSWORD: E2E_PASSWORD,
+  webServer: [
+    {
+      command: "npx tsx scripts/seed.ts --reset && node --import tsx src/server/main.ts",
+      url: `http://127.0.0.1:${E2E_PORT}/api/health`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: {
+        PORT: String(E2E_PORT),
+        DATA_DIR: dataDir,
+        LLM_MODE: "mock",
+        APP_PASSWORD_HASH: hashPassword(E2E_PASSWORD),
+        INBOX_WEBHOOK_SECRET: randomToken(32),
+        APP_ORIGINS: `http://127.0.0.1:${E2E_PORT}`,
+        ANTHROPIC_API_KEY: "",
+        // Shows the demo-access card on the login page, as on the public demo.
+        PUBLIC_DEMO_PASSWORD: E2E_PASSWORD,
+      },
     },
-  },
+    {
+      command: "npx tsx scripts/seed.ts --reset && node --import tsx src/server/main.ts",
+      url: `http://127.0.0.1:${E2E_EN_PORT}/api/health`,
+      reuseExistingServer: false,
+      timeout: 60_000,
+      env: {
+        APP_LOCALE: "en",
+        PORT: String(E2E_EN_PORT),
+        DATA_DIR: dataDirEn,
+        LLM_MODE: "mock",
+        APP_PASSWORD_HASH: hashPassword(E2E_EN_PASSWORD),
+        INBOX_WEBHOOK_SECRET: randomToken(32),
+        APP_ORIGINS: `http://127.0.0.1:${E2E_EN_PORT}`,
+        ANTHROPIC_API_KEY: "",
+        PUBLIC_DEMO_PASSWORD: E2E_EN_PASSWORD,
+      },
+    },
+  ],
 });

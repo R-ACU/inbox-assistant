@@ -17,18 +17,19 @@ import { Card, IconCircle, InnerCard } from "../components/ui/card";
 import { Skeleton } from "../components/ui/misc";
 import { Segmented } from "../components/ui/segmented";
 import { describeChange, type ChangeKind } from "../delta";
+import { INTL_LOCALE, ROUTES, TIME_ZONE, t } from "../i18n";
 import { CATEGORY_LABEL, formatCents, formatDay, formatDayLong, formatListTime, useApi } from "../lib";
 import { cn } from "../utils";
 
-const euro0 = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+const euro0 = new Intl.NumberFormat(INTL_LOCALE, { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 const euroOf = (cents: number) => euro0.format(Math.round(cents / 100));
 const ease = [0.23, 1, 0.32, 1] as const;
 
 function greeting() {
   // formatToParts: the German format is "02 Uhr", which Number() cannot read.
-  const part = new Intl.DateTimeFormat("de-DE", { hour: "numeric", hourCycle: "h23", timeZone: "Europe/Berlin" }).formatToParts(new Date()).find((p) => p.type === "hour");
+  const part = new Intl.DateTimeFormat(INTL_LOCALE, { hour: "numeric", hourCycle: "h23", timeZone: TIME_ZONE }).formatToParts(new Date()).find((p) => p.type === "hour");
   const h = Number(part?.value ?? 12);
-  return h < 11 ? "Guten Morgen" : h < 18 ? "Guten Tag" : "Guten Abend";
+  return h < 11 ? t("Guten Morgen", "Good morning") : h < 18 ? t("Guten Tag", "Good afternoon") : t("Guten Abend", "Good evening");
 }
 
 /** Bento cells enter one after another, a few frames apart. */
@@ -83,7 +84,8 @@ function CardTitle({ icon, title, aside, tone = "default" }: { icon: LucideIcon;
 function Hero({ data, days }: { data: DashboardData; days: "7" | "14" }) {
   const totals = Object.fromEntries(CATEGORIES.map((c) => [c, data.days.reduce((s, d) => s + d.byCategory[c], 0)])) as Record<(typeof CATEGORIES)[number], number>;
   const columns = data.days.map((d, i) => ({
-    label: i === data.days.length - 1 ? "Heute" : days === "7" ? formatDay(d.date).split(",")[0]! : formatDay(d.date).split(",")[1]!.trim().replace(/\.\d\d\.$/, "."),
+    // Day only: German "24.11." becomes "24.", English "24/11" becomes "24".
+    label: i === data.days.length - 1 ? t("Heute", "Today") : days === "7" ? formatDay(d.date).split(",")[0]! : formatDay(d.date).split(",")[1]!.trim().replace(/\.\d\d\.$/, ".").replace(/\/\d\d$/, ""),
     tooltipTitle: formatDayLong(d.date),
     ...d.byCategory,
   }));
@@ -95,7 +97,7 @@ function Hero({ data, days }: { data: DashboardData; days: "7" | "14" }) {
             <Inbox className="size-[18px]" strokeWidth={1.9} />
           </span>
           <h2 id="by-kind" className="text-[16px] font-medium tracking-[-0.01em]">
-            Eingang
+            {t("Eingang", "Incoming")}
           </h2>
         </div>
         <ValueLegend tone="hero" className="pt-2" items={CATEGORIES.map((c) => ({ key: c, label: CATEGORY_LABEL[c], value: String(totals[c]), color: CATEGORY_COLOR[c].fill }))} />
@@ -109,22 +111,22 @@ function Hero({ data, days }: { data: DashboardData; days: "7" | "14" }) {
           <div className="mt-4 flex flex-wrap items-center gap-2">
             <DeltaChip value={data.current.mails} previous={data.previous.mails} kind="count" />
           </div>
-          <p className="mt-2 text-[12.5px] text-hero-ink-2">{days === "7" ? "zur Vorwoche" : "zu den 14 Tagen davor"}</p>
+          <p className="mt-2 text-[12.5px] text-hero-ink-2">{days === "7" ? t("zur Vorwoche", "vs last week") : t("zu den 14 Tagen davor", "vs previous 14 days")}</p>
         </div>
         <StackedPills
           key={days}
           tone="hero"
           data={columns}
           series={CATEGORIES.map((c) => ({ key: c, label: CATEGORY_LABEL[c], color: CATEGORY_COLOR[c].fill }))}
-          ariaLabel="Mails pro Tag nach Art"
+          ariaLabel={t("Mails pro Tag nach Art", "Mails per day by type")}
           height={250}
         />
       </div>
       <table className="sr-only">
-        <caption>Mails pro Tag nach Kategorie</caption>
+        <caption>{t("Mails pro Tag nach Kategorie", "Mails per day by category")}</caption>
         <thead>
           <tr>
-            <th>Tag</th>
+            <th>{t("Tag", "Day")}</th>
             {CATEGORIES.map((c) => (
               <th key={c}>{CATEGORY_LABEL[c]}</th>
             ))}
@@ -152,8 +154,8 @@ function Waiting({ data, mails }: { data: DashboardData; mails: MailListItem[] }
   const review = mails.filter((m) => m.status === "needs_review" || m.status === "quarantined" || m.status === "delivery_failed").length;
   const total = data.tasks.length;
   const links = [
-    { to: "/freigabe", label: "Freigabe", count: waiting.length, icon: PenLine },
-    { to: "/pruefliste", label: "Prüfen", count: review, icon: CircleAlert },
+    { to: ROUTES.approval, label: t("Freigabe", "Approval"), count: waiting.length, icon: PenLine },
+    { to: ROUTES.review, label: t("Prüfen", "Review"), count: review, icon: CircleAlert },
   ];
   return (
     <section aria-labelledby="waiting" className="flex h-full flex-col rounded-[28px] bg-accent-strong p-7 text-white shadow-card">
@@ -163,17 +165,17 @@ function Waiting({ data, mails }: { data: DashboardData; mails: MailListItem[] }
             <ListTodo className="size-[18px]" strokeWidth={1.9} />
           </span>
           <h2 id="waiting" className="text-[16px] font-medium tracking-[-0.01em]">
-            Zu erledigen
+            {t("Zu erledigen", "To do")}
           </h2>
         </div>
-        <CornerLink to="/freigabe" label="Zum Posteingang" tone="strong" />
+        <CornerLink to={ROUTES.approval} label={t("Zum Posteingang", "To inbox")} tone="strong" />
       </div>
       <div className="mt-6 flex items-end justify-between gap-4">
         <div>
           <p className="text-[76px] leading-none font-medium tracking-[-0.045em]">
             <CountUp id="overview.waiting" value={total} />
           </p>
-          <p className="mt-2 text-[14px] text-white">{total === 1 ? "Mail wartet auf Sie" : "Mails warten auf Sie"}</p>
+          <p className="mt-2 text-[14px] text-white">{total === 1 ? t("Mail wartet auf Sie", "mail waiting for you") : t("Mails warten auf Sie", "mails waiting for you")}</p>
         </div>
       </div>
       <div className="mt-auto pt-6">
@@ -199,22 +201,22 @@ function Automation({ data }: { data: DashboardData }) {
   const auto = data.outcomes.auto + data.outcomes.prepared;
   const manual = data.outcomes.review + data.outcomes.quarantine;
   const total = auto + manual;
-  const pct = (n: number) => `${Math.round(total === 0 ? 0 : (n / total) * 100)} %`;
+  const pct = (n: number) => `${Math.round(total === 0 ? 0 : (n / total) * 100)}${t(" %", "%")}`;
   return (
     <Card className="flex h-full flex-col p-6">
-      <CardTitle icon={GaugeIcon} title="Ohne Nacharbeit" />
+      <CardTitle icon={GaugeIcon} title={t("Ohne Nacharbeit", "No follow-up")} />
       <InnerCard className="mt-5 flex flex-1 flex-col items-center justify-end px-4 pt-6 pb-4">
         <HalfGauge
           width={250}
-          ariaLabel={`${pct(auto)} ohne Nacharbeit`}
+          ariaLabel={t(`${pct(auto)} ohne Nacharbeit`, `${pct(auto)} without follow-up`)}
           parts={[
-            { key: "auto", label: "ohne Nacharbeit", value: auto },
-            { key: "manual", label: "mit Ihrem Blick", value: manual },
+            { key: "auto", label: t("ohne Nacharbeit", "no follow-up"), value: auto },
+            { key: "manual", label: t("mit Ihrem Blick", "with your check"), value: manual },
           ]}
           center={(h) => (
             <>
-              <p className="tnum text-[38px] leading-none font-medium tracking-[-0.03em] text-ink">{h ? pct(h.value) : <CountUp id="overview.automation" value={total === 0 ? 0 : (auto / total) * 100} format={(v) => `${Math.round(v)} %`} />}</p>
-              <p className="mt-1.5 text-[12.5px] text-ink-2">{h ? h.label : `${auto} von ${total} Mails`}</p>
+              <p className="tnum text-[38px] leading-none font-medium tracking-[-0.03em] text-ink">{h ? pct(h.value) : <CountUp id="overview.automation" value={total === 0 ? 0 : (auto / total) * 100} format={(v) => `${Math.round(v)}${t(" %", "%")}`} />}</p>
+              <p className="mt-1.5 text-[12.5px] text-ink-2">{h ? h.label : t(`${auto} von ${total} Mails`, `${auto} of ${total} mails`)}</p>
             </>
           )}
         />
@@ -222,8 +224,8 @@ function Automation({ data }: { data: DashboardData }) {
       <ValueLegend
         className="mt-4 justify-between px-1"
         items={[
-          { key: "auto", label: "Selbst erledigt", value: String(auto), color: "var(--accent)" },
-          { key: "manual", label: "Mit Ihnen", value: String(manual), color: "var(--hatch)" },
+          { key: "auto", label: t("Selbst erledigt", "Handled itself"), value: String(auto), color: "var(--accent)" },
+          { key: "manual", label: t("Mit Ihnen", "With you"), value: String(manual), color: "var(--hatch)" },
         ]}
       />
     </Card>
@@ -235,18 +237,21 @@ function Automation({ data }: { data: DashboardData }) {
 function Invoices({ data, labels }: { data: DashboardData; labels: string[] }) {
   return (
     <Card className="flex h-full flex-col p-6">
-      <CardTitle icon={ReceiptText} title="Rechnungen" aside={<CornerLink to="/rechnungen" label="Zu den Rechnungen" />} />
+      <CardTitle icon={ReceiptText} title={t("Rechnungen", "Invoices")} aside={<CornerLink to={ROUTES.invoices} label={t("Zu den Rechnungen", "To invoices")} />} />
       <p className="mt-6 text-[40px] leading-none font-medium tracking-[-0.03em] text-ink">
         <CountUp id="overview.invoices" value={data.current.invoiceGrossCents} format={(v) => euroOf(v)} />
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-[12.5px] text-ink-2">
         <DeltaChip value={data.current.invoiceGrossCents} previous={data.previous.invoiceGrossCents} kind="cents" />
         <span>
-          {data.current.invoices} {data.current.invoices === 1 ? "Beleg" : "Belege"} geprüft
+          {t(
+            `${data.current.invoices} ${data.current.invoices === 1 ? "Beleg" : "Belege"} geprüft`,
+            `${data.current.invoices} ${data.current.invoices === 1 ? "invoice" : "invoices"} checked`,
+          )}
         </span>
       </div>
       <div className="mt-auto pt-5">
-        <SparkBars points={data.days.map((d, i) => ({ label: labels[i] ?? d.date, value: d.invoiceGrossCents }))} format={(v) => formatCents(v)} ariaLabel="Rechnungsbetrag je Tag" height={104} />
+        <SparkBars points={data.days.map((d, i) => ({ label: labels[i] ?? d.date, value: d.invoiceGrossCents }))} format={(v) => formatCents(v)} ariaLabel={t("Rechnungsbetrag je Tag", "Invoice amount per day")} height={104} />
       </div>
     </Card>
   );
@@ -255,10 +260,10 @@ function Invoices({ data, labels }: { data: DashboardData; labels: string[] }) {
 // ---------------------------------------------------------------- feed
 
 const OUTCOME: Record<DashboardOutcome, { label: string; icon: LucideIcon; tone: string }> = {
-  auto: { label: "Abgelegt", icon: FolderCheck, tone: "text-ink-3" },
-  prepared: { label: "Entwurf bereit", icon: PenLine, tone: "text-accent-text" },
-  review: { label: "Zur Prüfung", icon: CircleAlert, tone: "text-accent-text" },
-  quarantine: { label: "Quarantäne", icon: ShieldAlert, tone: "text-bad" },
+  auto: { label: t("Abgelegt", "Filed"), icon: FolderCheck, tone: "text-ink-3" },
+  prepared: { label: t("Entwurf bereit", "Draft ready"), icon: PenLine, tone: "text-accent-text" },
+  review: { label: t("Zur Prüfung", "For review"), icon: CircleAlert, tone: "text-accent-text" },
+  quarantine: { label: t("Quarantäne", "Quarantine"), icon: ShieldAlert, tone: "text-bad" },
 };
 
 function Recent({ data, mails }: { data: DashboardData; mails: MailListItem[] }) {
@@ -272,14 +277,14 @@ function Recent({ data, mails }: { data: DashboardData; mails: MailListItem[] })
   });
   return (
     <Card className="flex h-full flex-col p-6">
-      <CardTitle icon={History} title="Zuletzt" aside={<CornerLink to="/posteingang" label="Alle Mails" />} />
-      <ul className="mt-4 flex flex-col gap-1" aria-label="Letzte Mails">
+      <CardTitle icon={History} title={t("Zuletzt", "Recent")} aside={<CornerLink to={ROUTES.inbox} label={t("Alle Mails", "All mails")} />} />
+      <ul className="mt-4 flex flex-col gap-1" aria-label={t("Letzte Mails", "Latest mails")}>
         {rows.map(({ m, outcome }, i) => {
           const o = OUTCOME[outcome];
           const sender = m.from.name || m.from.address;
           return (
             <motion.li key={m.id} initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.3, delay: 0.15 + i * 0.05, ease }}>
-              <Link to={`/mail/${m.id}`} title={m.subject} className="press -mx-2 flex items-center gap-3 rounded-[18px] px-2 py-2 hover:bg-surface-2">
+              <Link to={`${ROUTES.mail}/${m.id}`} title={m.subject} className="press -mx-2 flex items-center gap-3 rounded-[18px] px-2 py-2 hover:bg-surface-2">
                 <MailAvatar name={sender} category={m.category} status={m.status} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] font-medium text-ink">{sender}</span>
@@ -305,7 +310,7 @@ function Recent({ data, mails }: { data: DashboardData; mails: MailListItem[] })
 
 function OverviewSkeleton() {
   return (
-    <div aria-busy="true" aria-label="Wird geladen" className="grid gap-4 lg:grid-cols-12">
+    <div aria-busy="true" aria-label={t("Wird geladen", "Loading")} className="grid gap-4 lg:grid-cols-12">
       <Skeleton className="h-[372px] rounded-[28px] lg:col-span-8" />
       <Skeleton className="h-[372px] rounded-[28px] lg:col-span-4" />
       {[0, 1, 2].map((i) => (
@@ -316,7 +321,7 @@ function OverviewSkeleton() {
 }
 
 export function OverviewPage() {
-  usePageTitle("Übersicht");
+  usePageTitle(t("Übersicht", "Overview"));
   const [days, setDays] = useState<"7" | "14">("7");
   const { data, error, loading, reload } = useApi<DashboardData>(`/api/dashboard?days=${days}`);
   const mails = useApi<MailListItem[]>("/api/mails");
@@ -326,18 +331,18 @@ export function OverviewPage() {
     <PageScroll>
       <div className="flex flex-col gap-4 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-[32px] leading-tight font-medium tracking-[-0.03em] text-ink">Übersicht</h1>
+          <h1 className="text-[32px] leading-tight font-medium tracking-[-0.03em] text-ink">{t("Übersicht", "Overview")}</h1>
           <p className="mt-1 text-[14px] text-ink-2">
-            {greeting()}, Jonas.{data && ` ${data.current.mails} Mails in ${days} Tagen.`}
+            {greeting()}, {t("Jonas", "Conor")}.{data && t(` ${data.current.mails} Mails in ${days} Tagen.`, ` ${data.current.mails} mails in ${days} days.`)}
           </p>
         </div>
         <Segmented
-          label="Zeitraum"
+          label={t("Zeitraum", "Period")}
           value={days}
           onChange={setDays}
           options={[
-            { value: "7", label: "7 Tage" },
-            { value: "14", label: "14 Tage" },
+            { value: "7", label: t("7 Tage", "7 days") },
+            { value: "14", label: t("14 Tage", "14 days") },
           ]}
         />
       </div>

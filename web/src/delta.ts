@@ -1,3 +1,5 @@
+import { EN, INTL_LOCALE } from "./i18n";
+
 /**
  * How a key figure changed against the period before. Percentages on a small base look dramatic and say
  * little ("+114 %" for 7 to 15 mails), so they are only shown when the base is large; otherwise the
@@ -20,7 +22,7 @@ export interface Change {
 }
 
 const MINUS = "−";
-const euro = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+const euro = new Intl.NumberFormat(INTL_LOCALE, { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
 
 export function describeChange(value: number, previous: number, kind: ChangeKind): Change {
   if (value === previous) return { direction: "same", text: "±0", mode: previous === 0 ? "none" : "absolute" };
@@ -28,9 +30,9 @@ export function describeChange(value: number, previous: number, kind: ChangeKind
   const sign = direction === "up" ? "+" : MINUS;
   if (previous >= PERCENT_MIN_BASE[kind]) {
     const pct = Math.round((Math.abs(value - previous) / previous) * 100);
-    if (pct > 0) return { direction, text: `${sign}${pct} %`, mode: "percent" };
+    if (pct > 0) return { direction, text: `${sign}${pct}${EN ? "" : " "}%`, mode: "percent" };
   }
   const diff = Math.abs(value - previous);
-  const amount = kind === "cents" ? euro.format(Math.round(diff / 100)) : diff.toLocaleString("de-DE");
+  const amount = kind === "cents" ? euro.format(Math.round(diff / 100)) : diff.toLocaleString(INTL_LOCALE);
   return { direction, text: `${sign}${amount}`, mode: previous === 0 ? "new" : "absolute" };
 }

@@ -1,9 +1,10 @@
 /**
- * Builds the test set from fixtures/dataset.ts and fixtures/contracts.ts:
- *   fixtures/mails/*.eml            20 eval mails (+ extra/ for the demo inbox)
- *   fixtures/contracts/*.pdf        quote and order form pairs
+ * Builds the test sets from fixtures/dataset.ts, fixtures/en/dataset.ts and fixtures/contracts.ts:
+ *   fixtures/mails/*.eml            20 eval mails (+ extra/ for the demo inbox), German tenant
+ *   fixtures/contracts/*.pdf        quote and order form pairs (English, shared by both languages)
  *   fixtures/model/responses.json   mock model answers
  *   fixtures/expected.json          expected outcomes for the eval
+ *   fixtures/en/...                 the same for the English (Irish) tenant: mails/, model/, expected.json
  *
  * Usage: npm run fixtures
  */
@@ -13,12 +14,14 @@ import MailComposer from "nodemailer/lib/mail-composer";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { chromium } from "@playwright/test";
 import { CASES, REPLIES, type CaseSpec, type InvoiceSpec } from "../fixtures/dataset";
+import { CASES_EN, REPLIES_EN } from "../fixtures/en/dataset";
 import { CONTRACT_PAIRS, VENDOR, type ContractPairSpec } from "../fixtures/contracts";
 import { computeTcv } from "../src/core/reconcile";
 import { formatIban } from "../src/core/iban";
 import { sha256 } from "../src/mail/parse";
-import type { ContractExtraction, InvoiceExtraction } from "../src/shared/schemas";
-import { TENANT } from "../src/tenant/profile";
+import type { ContractExtraction, InvoiceExtraction, ReplyDraft } from "../src/shared/schemas";
+import { TENANT, type TenantProfile } from "../src/tenant/profile";
+import { TENANT_EN } from "../src/tenant/profile-en";
 
 const ROOT = join(import.meta.dirname, "..", "fixtures");
 const FIXED_DATE = new Date("2026-11-01T00:00:00Z");
@@ -29,6 +32,70 @@ const eur = (n: number) => `${de.format(n)} €`;
 const usd = (n: number) => `$${en.format(n)}`;
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const deDate = (iso: string) => iso.split("-").reverse().join(".");
+
+/** Everything printed on an invoice that depends on the tenant's language. */
+interface InvoiceLayout {
+  docTitle: (number: string) => string;
+  recipient: string[];
+  meta: [number: string, date: string, customer: string, supply: string];
+  customerNumber: string;
+  heading: string;
+  columns: [pos: string, desc: string, qty: string, unit: string, price: string, total: string];
+  quantity: (n: number) => string;
+  money: (n: number) => string;
+  date: (iso: string) => string;
+  totals: (rate: number) => [net: string, tax: string, gross: string];
+  terms: string;
+  bank: (iban: string) => string;
+  footer: (vatId: string) => string;
+  testNote: string;
+  scan: { number: string; date: string; net: string; tax: string; gross: string };
+}
+
+const LAYOUT_DE: InvoiceLayout = {
+  docTitle: (n) => `Rechnung ${n}`,
+  recipient: ["Malerbetrieb Hofmann & Kraft GmbH", "Am Lindenhof 12", "31999 Lindenfeld"],
+  meta: ["Rechnungsnummer", "Rechnungsdatum", "Kundennummer", "Leistungsdatum"],
+  customerNumber: "K-10482",
+  heading: "Rechnung",
+  columns: ["Pos.", "Beschreibung", "Menge", "Einheit", "Einzelpreis", "Gesamt"],
+  quantity: (n) => de.format(n).replace(",00", ""),
+  money: eur,
+  date: deDate,
+  totals: (rate) => ["Nettobetrag", `Umsatzsteuer ${rate} %`, "Gesamtbetrag"],
+  terms: "Zahlbar innerhalb von 14 Tagen ohne Abzug.",
+  bank: (iban) => `Bankverbindung: IBAN ${iban}`,
+  footer: (vatId) => `USt-IdNr. ${vatId} · Amtsgericht Lindenfeld (fiktiv)`,
+  testNote: "Testdokument, alle Angaben erfunden.",
+  scan: { number: "Rechnung", date: "Datum", net: "Netto", tax: "USt", gross: "Gesamt" },
+};
+
+const LAYOUT_EN: InvoiceLayout = {
+  docTitle: (n) => `Invoice ${n}`,
+  recipient: ["Brennan & Doyle Painting Ltd", "Unit 4, Millbrook Business Park", "Kilcarra, Co. Wicklow"],
+  meta: ["Invoice number", "Invoice date", "Customer no.", "Supply date"],
+  customerNumber: "C-10482",
+  heading: "Invoice",
+  columns: ["#", "Description", "Qty", "Unit", "Unit price", "Amount"],
+  quantity: (n) => en.format(n).replace(".00", ""),
+  money: (n) => `€${en.format(n)}`,
+  date: (iso) => iso.split("-").reverse().join("/"),
+  totals: (rate) => ["Net total", `VAT ${rate}%`, "Total due"],
+  terms: "Payment due within 14 days, no deduction.",
+  bank: (iban) => `Bank details: IBAN ${iban}`,
+  footer: (vatId) => `VAT no. ${vatId} · Registered in Ireland (fictional)`,
+  testNote: "Test document, all details invented.",
+  scan: { number: "Invoice", date: "Date", net: "Net", tax: "VAT", gross: "Total" },
+};
+
+/** One language's test set and where it goes. */
+interface FixtureSet {
+  root: string;
+  cases: CaseSpec[];
+  replies: Record<string, ReplyDraft>;
+  tenant: TenantProfile;
+  layout: InvoiceLayout;
+}
 
 const INK = rgb(0.13, 0.14, 0.16);
 const MUTED = rgb(0.42, 0.44, 0.48);
@@ -73,8 +140,8 @@ async function newDoc(title: string) {
   return { doc, ctx };
 }
 
-async function invoicePdf(spec: InvoiceSpec): Promise<Uint8Array> {
-  const { doc, ctx } = await newDoc(`Rechnung ${spec.number}`);
+async function invoicePdf(spec: InvoiceSpec, L: InvoiceLayout): Promise<Uint8Array> {
+  const { doc, ctx } = await newDoc(L.docTitle(spec.number));
   const { lines, printed } = invoiceTotals(spec);
   const s = spec.supplier;
 
@@ -82,47 +149,48 @@ async function invoicePdf(spec: InvoiceSpec): Promise<Uint8Array> {
   text(ctx, `${s.street} · ${s.city}`, 56, 764, { size: 8.5, color: MUTED });
 
   text(ctx, `${s.name} · ${s.street} · ${s.city}`, 56, 700, { size: 6.5, color: MUTED });
-  ["Malerbetrieb Hofmann & Kraft GmbH", "Am Lindenhof 12", "31999 Lindenfeld"].forEach((l, i) => text(ctx, l, 56, 684 - i * 13));
+  L.recipient.forEach((l, i) => text(ctx, l, 56, 684 - i * 13));
 
   const meta: [string, string][] = [
-    ["Rechnungsnummer", spec.number],
-    ["Rechnungsdatum", deDate(spec.date)],
-    ["Kundennummer", "K-10482"],
-    ["Leistungsdatum", deDate(spec.date)],
+    [L.meta[0], spec.number],
+    [L.meta[1], L.date(spec.date)],
+    [L.meta[2], L.customerNumber],
+    [L.meta[3], L.date(spec.date)],
   ];
   meta.forEach(([k, v], i) => {
     text(ctx, k, 360, 700 - i * 14, { size: 8.5, color: MUTED });
     text(ctx, v, 539, 700 - i * 14, { size: 8.5, align: "right" });
   });
 
-  text(ctx, "Rechnung", 56, 600, { size: 18, bold: true });
+  text(ctx, L.heading, 56, 600, { size: 18, bold: true });
 
   const cols = { pos: 56, desc: 82, qty: 360, unit: 368, price: 470, total: 539 };
   let y = 566;
-  text(ctx, "Pos.", cols.pos, y, { size: 8, color: MUTED });
-  text(ctx, "Beschreibung", cols.desc, y, { size: 8, color: MUTED });
-  text(ctx, "Menge", cols.qty, y, { size: 8, color: MUTED, align: "right" });
-  text(ctx, "Einheit", cols.unit, y, { size: 8, color: MUTED });
-  text(ctx, "Einzelpreis", cols.price, y, { size: 8, color: MUTED, align: "right" });
-  text(ctx, "Gesamt", cols.total, y, { size: 8, color: MUTED, align: "right" });
+  text(ctx, L.columns[0], cols.pos, y, { size: 8, color: MUTED });
+  text(ctx, L.columns[1], cols.desc, y, { size: 8, color: MUTED });
+  text(ctx, L.columns[2], cols.qty, y, { size: 8, color: MUTED, align: "right" });
+  text(ctx, L.columns[3], cols.unit, y, { size: 8, color: MUTED });
+  text(ctx, L.columns[4], cols.price, y, { size: 8, color: MUTED, align: "right" });
+  text(ctx, L.columns[5], cols.total, y, { size: 8, color: MUTED, align: "right" });
   hr(ctx, y - 7);
   y -= 24;
   lines.forEach((l, i) => {
     text(ctx, String(i + 1), cols.pos, y);
     text(ctx, l.description, cols.desc, y);
-    text(ctx, de.format(l.quantity).replace(",00", ""), cols.qty, y, { align: "right" });
+    text(ctx, L.quantity(l.quantity), cols.qty, y, { align: "right" });
     text(ctx, l.unit, cols.unit, y);
-    text(ctx, eur(l.unitPrice), cols.price, y, { align: "right" });
-    text(ctx, eur(l.total), cols.total, y, { align: "right" });
+    text(ctx, L.money(l.unitPrice), cols.price, y, { align: "right" });
+    text(ctx, L.money(l.total), cols.total, y, { align: "right" });
     y -= 20;
   });
   hr(ctx, y + 8);
 
   y -= 14;
+  const [netLabel, taxLabel, grossLabel] = L.totals(spec.taxRate);
   const totals: [string, string, boolean][] = [
-    ["Nettobetrag", eur(printed.net), false],
-    [`Umsatzsteuer ${spec.taxRate} %`, eur(printed.tax), false],
-    ["Gesamtbetrag", eur(printed.gross), true],
+    [netLabel, L.money(printed.net), false],
+    [taxLabel, L.money(printed.tax), false],
+    [grossLabel, L.money(printed.gross), true],
   ];
   totals.forEach(([k, v, strong]) => {
     text(ctx, k, 360, y, { bold: strong, size: strong ? 10.5 : 9.5 });
@@ -130,34 +198,35 @@ async function invoicePdf(spec: InvoiceSpec): Promise<Uint8Array> {
     y -= 18;
   });
 
-  text(ctx, "Zahlbar innerhalb von 14 Tagen ohne Abzug.", 56, y - 24, { size: 9 });
+  text(ctx, L.terms, 56, y - 24, { size: 9 });
 
   hr(ctx, 96);
-  text(ctx, `Bankverbindung: IBAN ${formatIban(s.iban)}`, 56, 80, { size: 7.5, color: MUTED });
-  text(ctx, `USt-IdNr. ${s.vatId} · Amtsgericht Lindenfeld (fiktiv)`, 56, 68, { size: 7.5, color: MUTED });
-  text(ctx, "Testdokument, alle Angaben erfunden.", 539, 68, { size: 7.5, color: MUTED, align: "right" });
+  text(ctx, L.bank(formatIban(s.iban)), 56, 80, { size: 7.5, color: MUTED });
+  text(ctx, L.footer(s.vatId), 56, 68, { size: 7.5, color: MUTED });
+  text(ctx, L.testNote, 539, 68, { size: 7.5, color: MUTED, align: "right" });
   return doc.save({ useObjectStreams: false });
 }
 
 /** Renders the invoice as a bad scan: image only, blurred, skewed, low contrast. */
-async function scanPdf(spec: InvoiceSpec): Promise<Uint8Array> {
+async function scanPdf(spec: InvoiceSpec, set: FixtureSet): Promise<Uint8Array> {
+  const L = set.layout;
   const { lines, printed } = invoiceTotals(spec);
   const rows = lines
-    .map((l, i) => `<tr><td>${i + 1}</td><td>${l.description}</td><td>${l.quantity}</td><td>${eur(l.unitPrice)}</td><td>${eur(l.total)}</td></tr>`)
+    .map((l, i) => `<tr><td>${i + 1}</td><td>${l.description}</td><td>${l.quantity}</td><td>${L.money(l.unitPrice)}</td><td>${L.money(l.total)}</td></tr>`)
     .join("");
   const html = `<!doctype html><html><body style="margin:0;background:#d9d6cf">
     <div style="width:794px;height:1123px;padding:70px;box-sizing:border-box;background:#e9e6df;font:15px Arial;color:#55524c;
       transform:rotate(-4.5deg) translate(150px,18px);filter:blur(3.4px) contrast(.4) brightness(1.08)">
       <div style="font-size:24px;font-weight:bold">${spec.supplier.name}</div>
       <div>${spec.supplier.street}, ${spec.supplier.city}</div>
-      <div style="margin-top:80px;font-size:26px;font-weight:bold">Rechnung ${spec.number}</div>
-      <div>Datum ${deDate(spec.date)}</div>
+      <div style="margin-top:80px;font-size:26px;font-weight:bold">${L.scan.number} ${spec.number}</div>
+      <div>${L.scan.date} ${L.date(spec.date)}</div>
       <table style="margin-top:40px;width:100%;font-size:15px">${rows}</table>
-      <div style="margin-top:30px;text-align:right">Netto ${eur(printed.net)}<br>USt ${eur(printed.tax)}<br><b>Gesamt ${eur(printed.gross)}</b></div>
+      <div style="margin-top:30px;text-align:right">${L.scan.net} ${L.money(printed.net)}<br>${L.scan.tax} ${L.money(printed.tax)}<br><b>${L.scan.gross} ${L.money(printed.gross)}</b></div>
     </div></body></html>`;
   // The browser draws fonts differently on every OS, so the scan is rendered
   // once and kept as a binary fixture; delete the PNG to render it again.
-  const pngPath = join(ROOT, "scans", spec.filename.replace(/\.pdf$/i, ".png"));
+  const pngPath = join(set.root, "scans", spec.filename.replace(/\.pdf$/i, ".png"));
   let png: Uint8Array;
   if (existsSync(pngPath)) {
     png = readFileSync(pngPath);
@@ -170,7 +239,7 @@ async function scanPdf(spec: InvoiceSpec): Promise<Uint8Array> {
     } finally {
       await browser.close();
     }
-    mkdirSync(join(ROOT, "scans"), { recursive: true });
+    mkdirSync(join(set.root, "scans"), { recursive: true });
     writeFileSync(pngPath, png);
   }
   const doc = await PDFDocument.create();
@@ -258,10 +327,10 @@ function messageIdFor(c: CaseSpec): string {
   return `<${c.id}.${c.date.slice(0, 10)}@${c.from.address.split("@")[1]}>`;
 }
 
-async function buildEml(c: CaseSpec, attachment: { filename: string; content: Uint8Array } | null): Promise<Buffer> {
+async function buildEml(c: CaseSpec, attachment: { filename: string; content: Uint8Array } | null, tenant: TenantProfile): Promise<Buffer> {
   const composer = new MailComposer({
     from: { name: c.from.name, address: c.from.address },
-    to: { name: TENANT.company, address: TENANT.mailbox },
+    to: { name: tenant.company, address: tenant.mailbox },
     replyTo: c.replyTo,
     subject: c.subject,
     date: new Date(c.date),
@@ -310,36 +379,59 @@ function invoiceExtraction(c: CaseSpec): InvoiceExtraction {
   };
 }
 
-async function main() {
-  for (const dir of ["mails", "contracts", "model"]) rmSync(join(ROOT, dir), { recursive: true, force: true });
-  mkdirSync(join(ROOT, "mails", "extra"), { recursive: true });
+/** Quote and order form pairs: written once (fixtures/contracts), their mock answers go into every set. */
+async function writeContracts(): Promise<Record<string, unknown>> {
+  rmSync(join(ROOT, "contracts"), { recursive: true, force: true });
   mkdirSync(join(ROOT, "contracts"), { recursive: true });
-  mkdirSync(join(ROOT, "model"), { recursive: true });
+  const answers: Record<string, unknown> = {};
+  const pairs: unknown[] = [];
+  for (const pair of CONTRACT_PAIRS) {
+    const files: Record<string, string> = {};
+    for (const side of ["quote", "order"] as const) {
+      const d = pair[side];
+      const content = await contractPdf(d);
+      const filename = `${pair.id}-${side === "quote" ? "quote" : "order-form"}.pdf`;
+      writeFileSync(join(ROOT, "contracts", filename), content);
+      files[side] = filename;
+      const { printedTcvOverride: _o, signer: _s, ...fields } = d;
+      const extraction: ContractExtraction = { ...fields, readable: true, total_contract_value: contractTcv(d) };
+      answers[sha256(content)] = extraction;
+    }
+    pairs.push({ id: pair.id, title: pair.title, quote: files.quote, order: files.order, expectedDiscrepancies: pair.expectedDiscrepancies });
+  }
+  writeFileSync(join(ROOT, "contracts", "pairs.json"), `${JSON.stringify(pairs, null, 2)}\n`);
+  return answers;
+}
+
+async function writeSet(set: FixtureSet, contractAnswers: Record<string, unknown>): Promise<number> {
+  for (const dir of ["mails", "model"]) rmSync(join(set.root, dir), { recursive: true, force: true });
+  mkdirSync(join(set.root, "mails", "extra"), { recursive: true });
+  mkdirSync(join(set.root, "model"), { recursive: true });
 
   const responses = {
     classify: {} as Record<string, unknown>,
     draft: {} as Record<string, unknown>,
     reply: {} as Record<string, unknown>,
     invoice: {} as Record<string, unknown>,
-    contract: {} as Record<string, unknown>,
+    contract: contractAnswers,
   };
   const expected: unknown[] = [];
 
-  for (const c of CASES) {
+  for (const c of set.cases) {
     const messageId = messageIdFor(c);
     let attachment: { filename: string; content: Uint8Array } | null = null;
     if (c.invoice) {
-      const content = c.invoice.scan ? await scanPdf(c.invoice) : await invoicePdf(c.invoice);
+      const content = c.invoice.scan ? await scanPdf(c.invoice, set) : await invoicePdf(c.invoice, set.layout);
       attachment = { filename: c.invoice.filename, content };
       responses.invoice[sha256(content)] = invoiceExtraction(c);
     }
-    const eml = await buildEml(c, attachment);
+    const eml = await buildEml(c, attachment, set.tenant);
     const file = c.group === "extra" ? join("extra", `${c.id}.eml`) : `${c.id}.eml`;
-    writeFileSync(join(ROOT, "mails", file), eml);
+    writeFileSync(join(set.root, "mails", file), eml);
 
     responses.classify[messageId] = c.mock.classify;
     if (c.mock.draft) responses.draft[messageId] = c.mock.draft;
-    if (REPLIES[c.id]) responses.reply[messageId] = REPLIES[c.id];
+    if (set.replies[c.id]) responses.reply[messageId] = set.replies[c.id];
 
     if (c.group !== "extra") {
       const fields = c.invoice && !c.invoice.scan ? invoiceExtraction(c) : null;
@@ -365,26 +457,22 @@ async function main() {
     }
   }
 
-  const pairs: unknown[] = [];
-  for (const pair of CONTRACT_PAIRS) {
-    const files: Record<string, string> = {};
-    for (const side of ["quote", "order"] as const) {
-      const d = pair[side];
-      const content = await contractPdf(d);
-      const filename = `${pair.id}-${side === "quote" ? "quote" : "order-form"}.pdf`;
-      writeFileSync(join(ROOT, "contracts", filename), content);
-      files[side] = filename;
-      const { printedTcvOverride: _o, signer: _s, ...fields } = d;
-      const extraction: ContractExtraction = { ...fields, readable: true, total_contract_value: contractTcv(d) };
-      responses.contract[sha256(content)] = extraction;
-    }
-    pairs.push({ id: pair.id, title: pair.title, quote: files.quote, order: files.order, expectedDiscrepancies: pair.expectedDiscrepancies });
-  }
+  writeFileSync(join(set.root, "model", "responses.json"), `${JSON.stringify(responses, null, 2)}\n`);
+  writeFileSync(join(set.root, "expected.json"), `${JSON.stringify(expected, null, 2)}\n`);
+  return expected.length;
+}
 
-  writeFileSync(join(ROOT, "model", "responses.json"), `${JSON.stringify(responses, null, 2)}\n`);
-  writeFileSync(join(ROOT, "expected.json"), `${JSON.stringify(expected, null, 2)}\n`);
-  writeFileSync(join(ROOT, "contracts", "pairs.json"), `${JSON.stringify(pairs, null, 2)}\n`);
-  console.log(`Wrote ${CASES.length} mails (${expected.length} in the eval set), ${pairs.length} contract pairs.`);
+async function main() {
+  const contractAnswers = await writeContracts();
+  const sets: FixtureSet[] = [
+    { root: ROOT, cases: CASES, replies: REPLIES, tenant: TENANT, layout: LAYOUT_DE },
+    { root: join(ROOT, "en"), cases: CASES_EN, replies: REPLIES_EN, tenant: TENANT_EN, layout: LAYOUT_EN },
+  ];
+  for (const set of sets) {
+    const evalCount = await writeSet(set, contractAnswers);
+    console.log(`${set.tenant.locale}: wrote ${set.cases.length} mails (${evalCount} in the eval set).`);
+  }
+  console.log(`Wrote ${CONTRACT_PAIRS.length} contract pairs.`);
 }
 
 await main();

@@ -6,7 +6,7 @@
  *   /api/hooks/*   n8n API: HMAC signature over timestamp, method, path and body
  *   everything else: the built web UI (dist/), served with a strict CSP
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
@@ -15,7 +15,9 @@ import rateLimit from "@fastify/rate-limit";
 import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
+import { pick } from "../shared/locale";
 import type { AppConfig } from "./config";
+import { localizeIndexHtml } from "./index-html";
 import {
   ReplayGuard,
   SIGNATURE_HEADER,
@@ -65,14 +67,15 @@ export const REPLY_RATE_LIMIT = { max: 10, timeWindow: "1 minute" };
 
 const IdParam = z.object({ id: z.string().regex(/^[0-9a-f]{20}$/) });
 
-function parse<S extends z.ZodType>(schema: S, value: unknown): z.infer<S> {
-  const res = schema.safeParse(value ?? {});
-  if (!res.success) throw new ServiceError(400, "Ungültige Eingabe");
-  return res.data;
-}
-
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const { config, store, service } = deps;
+  /** Error texts are read by the owner, so they follow the language of the deployment. */
+  const say = (de: string, en: string) => pick(config.locale, de, en);
+  const parse = <S extends z.ZodType>(schema: S, value: unknown): z.infer<S> => {
+    const res = schema.safeParse(value ?? {});
+    if (!res.success) throw new ServiceError(400, say("Ungültige Eingabe", "Invalid input"));
+    return res.data;
+  };
   const now = deps.now ?? (() => new Date());
   const replay = new ReplayGuard();
 
@@ -107,12 +110,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
     if (error instanceof ServiceError) return reply.status(error.status).send({ error: error.message });
-    if (error.statusCode === 429) return reply.status(429).send({ error: "Zu viele Versuche. Bitte kurz warten." });
+    if (error.statusCode === 429) return reply.status(429).send({ error: say("Zu viele Versuche. Bitte kurz warten.", "Too many attempts. Please wait a moment.") });
     if (error.statusCode && error.statusCode >= 400 && error.statusCode < 500) {
-      return reply.status(error.statusCode).send({ error: "Ungültige Anfrage" });
+      return reply.status(error.statusCode).send({ error: say("Ungültige Anfrage", "Invalid request") });
     }
     request.log.error(error);
-    return reply.status(500).send({ error: "Interner Fehler" });
+    return reply.status(500).send({ error: say("Interner Fehler", "Internal error") });
   });
 
   // ---------------------------------------------------------------- session handling
@@ -126,15 +129,15 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   const requireSession = async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!request.session) return reply.status(401).send({ error: "Nicht angemeldet" });
+    if (!request.session) return reply.status(401).send({ error: say("Nicht angemeldet", "Not signed in") });
     if (request.method === "GET" || request.method === "HEAD") return;
     const origin = request.headers.origin;
     if (!origin || !config.allowedOrigins.includes(origin)) {
-      return reply.status(403).send({ error: "Ungültiger Ursprung" });
+      return reply.status(403).send({ error: say("Ungültiger Ursprung", "Invalid origin") });
     }
     const csrf = request.headers[CSRF_HEADER];
     if (typeof csrf !== "string" || !safeEqual(csrf, request.session.csrf)) {
-      return reply.status(403).send({ error: "CSRF-Token fehlt oder ist ungültig" });
+      return reply.status(403).send({ error: say("CSRF-Token fehlt oder ist ungültig", "CSRF token missing or invalid") });
     }
   };
 
@@ -151,10 +154,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
     async (request, reply) => {
       const origin = request.headers.origin;
-      if (!origin || !config.allowedOrigins.includes(origin)) return reply.status(403).send({ error: "Ungültiger Ursprung" });
+      if (!origin || !config.allowedOrigins.includes(origin)) return reply.status(403).send({ error: say("Ungültiger Ursprung", "Invalid origin") });
       const { password } = parse(LoginBody, request.body);
       if (!verifyPassword(password, config.passwordHash)) {
-        return reply.status(401).send({ error: "Passwort falsch" });
+        return reply.status(401).send({ error: say("Passwort falsch", "Wrong password") });
       }
       if (request.session) store.deleteSession(request.session.idHash);
       const token = randomToken();
@@ -191,7 +194,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     owner.get("/api/mails/:id/attachments/:index", async (request, reply) => {
       const { id } = parse(IdParam, request.params);
       const index = Number((request.params as { index: string }).index);
-      if (!Number.isInteger(index) || index < 0 || index > 20) throw new ServiceError(404, "Anhang nicht verfügbar");
+      if (!Number.isInteger(index) || index < 0 || index > 20) throw new ServiceError(404, say("Anhang nicht verfügbar", "Attachment not available"));
       const file = await service.attachment(id, index);
       return reply
         .header("content-type", file.mediaType)
@@ -231,19 +234,19 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     owner.get("/api/invoices", async () => service.invoices());
     owner.get("/api/dashboard", async (request) => {
       const days = (request.query as { days?: string }).days ?? "7";
-      if (days !== "7" && days !== "14") throw new ServiceError(400, "Ungültiger Zeitraum");
+      if (days !== "7" && days !== "14") throw new ServiceError(400, say("Ungültiger Zeitraum", "Invalid period"));
       return service.dashboard(days === "7" ? 7 : 14);
     });
     owner.get("/api/weekly", async (request) => {
       const week = (request.query as { week?: string }).week;
-      if (week !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new ServiceError(400, "Ungültige Woche");
+      if (week !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(week)) throw new ServiceError(400, say("Ungültige Woche", "Invalid week"));
       return service.weekly(week);
     });
 
     owner.get("/api/reconcile/samples", async () => service.contractSamples());
     owner.post("/api/reconcile/samples/:sample", async (request) => {
       const sample = (request.params as { sample: string }).sample;
-      if (!/^[a-z0-9-]{1,40}$/.test(sample)) throw new ServiceError(404, "Beispiel nicht gefunden");
+      if (!/^[a-z0-9-]{1,40}$/.test(sample)) throw new ServiceError(404, say("Beispiel nicht gefunden", "Sample not found"));
       return service.reconcileSample(sample);
     });
     owner.post("/api/reconcile", async (request) => {
@@ -253,7 +256,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       }
       const quote = files.find((f) => f.field === "quote");
       const order = files.find((f) => f.field === "order");
-      if (!quote || !order) throw new ServiceError(400, "Bitte Angebot und Bestellformular hochladen");
+      if (!quote || !order) throw new ServiceError(400, say("Bitte Angebot und Bestellformular hochladen", "Please upload a quote and an order form"));
       return service.reconcileFiles(quote, order);
     });
   });
@@ -271,7 +274,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       });
       if (!pre.ok) {
         request.log.warn({ reason: pre.reason }, "rejected webhook before body");
-        return reply.status(401).send({ error: "Signatur ungültig" });
+        return reply.status(401).send({ error: say("Signatur ungültig", "Invalid signature") });
       }
     });
 
@@ -281,7 +284,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       try {
         done(null, body ? JSON.parse(body as string) : {});
       } catch {
-        done(new ServiceError(400, "Ungültiges JSON"), undefined);
+        done(new ServiceError(400, say("Ungültiges JSON", "Invalid JSON")), undefined);
       }
     });
 
@@ -299,7 +302,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       });
       if (!check.ok) {
         request.log.warn({ reason: check.reason }, "rejected webhook");
-        return reply.status(401).send({ error: "Signatur ungültig" });
+        return reply.status(401).send({ error: say("Signatur ungültig", "Invalid signature") });
       }
     });
 
@@ -332,15 +335,21 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   const webRoot = deps.webRoot ?? join(import.meta.dirname, "..", "..", "dist");
   const hasWeb = existsSync(join(webRoot, "index.html"));
-  if (hasWeb) await app.register(fastifyStatic, { root: webRoot, wildcard: true, index: ["index.html"] });
+  // The app shell in the language of the deployment (see index-html.ts); the static plugin serves everything else.
+  const indexHtml = hasWeb ? localizeIndexHtml(readFileSync(join(webRoot, "index.html"), "utf8"), config.locale) : "";
+  const sendIndex = (reply: FastifyReply) => reply.type("text/html; charset=utf-8").header("cache-control", "no-cache").send(indexHtml);
+  if (hasWeb) {
+    await app.register(fastifyStatic, { root: webRoot, wildcard: true, index: false, allowedPath: (path) => path !== "/index.html" });
+    app.get("/", async (_request, reply) => sendIndex(reply));
+  }
 
   app.setNotFoundHandler((request, reply) => {
     // Client-side routes get the app shell; anything that looks like a file (has an extension) gets a real 404.
     const looksLikeFile = /\.[a-z0-9]+$/i.test(request.url.split("?")[0] ?? "");
     if (request.url.startsWith("/api/") || !hasWeb || request.method !== "GET" || looksLikeFile) {
-      return reply.status(404).send({ error: "Nicht gefunden" });
+      return reply.status(404).send({ error: say("Nicht gefunden", "Not found") });
     }
-    return reply.sendFile("index.html");
+    return sendIndex(reply);
   });
 
   return app;

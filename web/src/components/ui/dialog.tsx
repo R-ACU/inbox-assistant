@@ -2,6 +2,7 @@ import { X } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { t } from "../../i18n";
 import { easeOut } from "../motion";
 import { Button } from "./button";
 
@@ -74,7 +75,7 @@ function DialogPanel({ onClose, title, children, width }: { onClose: () => void;
           <h2 id={id} className="text-[17px] font-semibold text-ink">
             {title}
           </h2>
-          <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Schließen" icon={<X aria-hidden />} />
+          <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label={t("Schließen", "Close")} icon={<X aria-hidden />} />
         </div>
         {children}
       </motion.div>

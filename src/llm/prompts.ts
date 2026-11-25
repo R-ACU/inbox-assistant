@@ -3,6 +3,7 @@
  * wrapped in tags; the system prompt states that it is data, never orders.
  */
 import type { FaqEntry } from "../core/draft-check";
+import type { Locale } from "../shared/locale";
 import type { InboundMail } from "../shared/types";
 
 /** Escapes angle brackets so mail content cannot close or fake our tags. */
@@ -105,3 +106,42 @@ export const CONTRACT_SYSTEM = [
   "If the document is unreadable or not a quote or order form, set readable to false.",
   DATA_RULE,
 ].join("\n");
+
+// ---------------------------------------------------------------- English tenant
+
+/** The same jobs for the Irish painting business of the English deployment: English reasons and drafts. */
+export const CLASSIFY_SYSTEM_EN = CLASSIFY_SYSTEM.replace(
+  "You sort incoming mail for a small German painting business (Malerbetrieb).",
+  "You sort incoming mail for a small painting business in Ireland.",
+).replace("Give at most three short reasons in German.", "Give at most three short reasons in English.");
+
+export const INVOICE_SYSTEM_EN = INVOICE_SYSTEM.replace(
+  "You read supplier invoices for a German painting business.",
+  "You read supplier invoices for a painting business in Ireland.",
+)
+  .replace("tax_rate_percent is the printed VAT rate, e.g. 19.", "tax_rate_percent is the printed VAT rate, e.g. 23 or 13.5.")
+  .replace("explain briefly in German in unreadable_reason.", "explain briefly in English in unreadable_reason.");
+
+export const DRAFT_SYSTEM_EN = DRAFT_SYSTEM.replace(
+  "You write reply drafts in German for a small painting business.",
+  "You write reply drafts in English for a small painting business in Ireland.",
+).replace("Use the formal Sie form, short paragraphs, friendly and plain.", "Address the customer by name, short paragraphs, friendly and plain, Irish English spelling.");
+
+export const REPLY_ON_REQUEST_SYSTEM_EN = REPLY_ON_REQUEST_SYSTEM.replace(
+  "You write a reply draft in German for a small painting business.",
+  "You write a reply draft in English for a small painting business in Ireland.",
+).replace("Use the formal Sie form, short paragraphs, friendly and plain.", "Address the sender by name, short paragraphs, friendly and plain, Irish English spelling.");
+
+export interface PromptSet {
+  classify: string;
+  invoice: string;
+  draft: string;
+  replyOnRequest: string;
+  contract: string;
+}
+
+export function promptsFor(locale: Locale): PromptSet {
+  return locale === "en"
+    ? { classify: CLASSIFY_SYSTEM_EN, invoice: INVOICE_SYSTEM_EN, draft: DRAFT_SYSTEM_EN, replyOnRequest: REPLY_ON_REQUEST_SYSTEM_EN, contract: CONTRACT_SYSTEM }
+    : { classify: CLASSIFY_SYSTEM, invoice: INVOICE_SYSTEM, draft: DRAFT_SYSTEM, replyOnRequest: REPLY_ON_REQUEST_SYSTEM, contract: CONTRACT_SYSTEM };
+}

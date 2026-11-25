@@ -6,6 +6,7 @@
  *                                   measured is whether the code routes and checks correctly)
  *   LLM_MODE=claude npm run eval    real mode: calls the Claude API (Haiku sorts, Sonnet reads PDFs and drafts);
  *                                   needs ANTHROPIC_API_KEY in the local .env. These are the real numbers.
+ *   APP_LOCALE=en npm run eval      the English test set (fixtures/en/, Irish tenant), same modes.
  *
  * Results are written to eval-results/<timestamp>-<mode>.{json,md}; existing files are never overwritten.
  */
@@ -19,12 +20,17 @@ import { DEFAULT_MODELS, type LlmProvider } from "../src/llm/provider";
 import { parseEml } from "../src/mail/parse";
 import { loadLocalEnv } from "../src/server/bootstrap";
 import type { ProcessedMail } from "../src/shared/types";
-import { TENANT } from "../src/tenant/profile";
+import { fixtureRoot } from "../src/server/config";
+import type { Locale } from "../src/shared/locale";
+import { tenantFor } from "../src/tenant";
 
 loadLocalEnv();
 const ROOT = process.cwd();
 const mode = (process.env.LLM_MODE ?? "mock") as "mock" | "claude";
 const NOW = process.env.EVAL_NOW ?? "2026-11-24T10:00:00.000Z";
+const locale: Locale = process.env.APP_LOCALE === "en" ? "en" : "de";
+const FIXTURES = join(ROOT, fixtureRoot(locale));
+const TENANT = tenantFor(locale);
 
 // USD per million tokens (input, output), from the published price list.
 const PRICES: Record<string, [number, number]> = {
@@ -56,9 +62,9 @@ function provider(): LlmProvider {
   if (mode === "claude") {
     const key = process.env.ANTHROPIC_API_KEY;
     if (!key) throw new Error("LLM_MODE=claude needs ANTHROPIC_API_KEY in the local .env");
-    return new ClaudeProvider(key, models);
+    return new ClaudeProvider(key, models, locale);
   }
-  return MockProvider.fromFile(join(ROOT, "fixtures", "model", "responses.json"), models);
+  return MockProvider.fromFile(join(FIXTURES, "model", "responses.json"), models, locale);
 }
 
 const FIELDS = ["supplier_name", "invoice_number", "invoice_date", "net_total", "tax_total", "gross_total", "line_count"] as const;
@@ -83,14 +89,14 @@ function fieldMatches(field: (typeof FIELDS)[number], expected: Expected["invoic
 const pct = (n: number, d: number) => (d === 0 ? "n/a" : `${((n / d) * 100).toFixed(0)} %`);
 
 async function main() {
-  const expected = JSON.parse(readFileSync(join(ROOT, "fixtures", "expected.json"), "utf8")) as Expected[];
+  const expected = JSON.parse(readFileSync(join(FIXTURES, "expected.json"), "utf8")) as Expected[];
   const llm = provider();
   const started = Date.now();
   const rows: { exp: Expected; got: ProcessedMail; codesFound: boolean; ms: number }[] = [];
 
   for (const exp of expected) {
     const t0 = Date.now();
-    const parsed = await parseEml(readFileSync(join(ROOT, "fixtures", exp.file)));
+    const parsed = await parseEml(readFileSync(join(FIXTURES, exp.file)), locale);
     const got = await processMail(parsed, { llm, tenant: TENANT, now: NOW, existingInvoices: [] });
     const codes = [...got.ruleFindings, ...got.reviewReasons, ...(got.invoice?.findings ?? []), ...(got.draft?.findings ?? [])].map((f) => f.code);
     rows.push({ exp, got, codesFound: exp.codes.every((c) => codes.includes(c)), ms: Date.now() - t0 });
@@ -122,6 +128,7 @@ async function main() {
 
   const summary = {
     mode,
+    locale,
     note:
       mode === "mock"
         ? "Pipeline test: model answers come from fixtures, so category and field accuracy are 100 % by construction. Real accuracy needs LLM_MODE=claude."
@@ -146,7 +153,7 @@ async function main() {
   };
 
   const lines = [
-    `# Eval ${summary.at} (${mode})`,
+    `# Eval ${summary.at} (${mode}, ${locale === "en" ? "English test set" : "German test set"})`,
     "",
     summary.note,
     "",
@@ -168,11 +175,12 @@ async function main() {
   const dir = join(ROOT, "eval-results");
   mkdirSync(dir, { recursive: true });
   const stamp = summary.at.replace(/[:.]/g, "-");
-  writeFileSync(join(dir, `${stamp}-${mode}.json`), `${JSON.stringify(summary, null, 2)}\n`, { flag: "wx" });
-  writeFileSync(join(dir, `${stamp}-${mode}.md`), `${lines.join("\n")}\n`, { flag: "wx" });
+  const tag = locale === "en" ? `${mode}-en` : mode;
+  writeFileSync(join(dir, `${stamp}-${tag}.json`), `${JSON.stringify(summary, null, 2)}\n`, { flag: "wx" });
+  writeFileSync(join(dir, `${stamp}-${tag}.md`), `${lines.join("\n")}\n`, { flag: "wx" });
 
   console.log(lines.slice(0, 14).join("\n"));
-  console.log(`\nWritten to eval-results/${stamp}-${mode}.{json,md}`);
+  console.log(`\nWritten to eval-results/${stamp}-${tag}.{json,md}`);
   const failed = summary.cases.filter((c) => !c.ok);
   if (failed.length > 0) {
     console.log(`\n${failed.length} case(s) differ from the expected outcome: ${failed.map((c) => c.id).join(", ")}`);

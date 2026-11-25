@@ -1,6 +1,7 @@
 /** Pieces shared by the mailbox list and the reading pane. */
 import { useSyncExternalStore } from "react";
 import type { MailStatus } from "../../../../src/shared/types";
+import { t } from "../../i18n";
 import { STATUS_LABEL } from "../../lib";
 import { cn } from "../../utils";
 import { Badge } from "../ui/badge";
@@ -34,12 +35,10 @@ const STATUS_TONE: Record<MailStatus, "neutral" | "accent" | "good" | "bad" | "o
 };
 
 /** Short status words for list chips; the full label is in the reading pane. */
-export const STATUS_SHORT: Partial<Record<MailStatus, string>> = {
-  awaiting_approval: "Freigabe",
-  needs_review: "Prüfen",
-  quarantined: "Quarantäne",
-  delivery_failed: "Fehler",
-};
+export const STATUS_SHORT: Partial<Record<MailStatus, string>> = t<Partial<Record<MailStatus, string>>>(
+  { awaiting_approval: "Freigabe", needs_review: "Prüfen", quarantined: "Quarantäne", delivery_failed: "Fehler" },
+  { awaiting_approval: "Approval", needs_review: "Review", quarantined: "Quarantine", delivery_failed: "Failed" },
+);
 
 export function StatusBadge({ status, short = false, className }: { status: MailStatus; short?: boolean; className?: string }) {
   return (
@@ -51,7 +50,7 @@ export function StatusBadge({ status, short = false, className }: { status: Mail
 
 export function ListSkeleton({ rows = 6 }: { rows?: number }) {
   return (
-    <div aria-busy="true" aria-label="Wird geladen" className="flex flex-col gap-1 px-1">
+    <div aria-busy="true" aria-label={t("Wird geladen", "Loading")} className="flex flex-col gap-1 px-1">
       {Array.from({ length: rows }, (_, i) => (
         <div key={i} className="flex items-center gap-3 rounded-[20px] px-2 py-3" aria-hidden>
           <Skeleton className="size-[38px] rounded-full" />
@@ -68,7 +67,7 @@ export function ListSkeleton({ rows = 6 }: { rows?: number }) {
 export function ReaderSkeleton({ className }: { className?: string }) {
   return (
     <Panel className={cn("flex-1", className)}>
-      <div aria-busy="true" aria-label="Wird geladen" className="flex flex-col gap-4 p-8">
+      <div aria-busy="true" aria-label={t("Wird geladen", "Loading")} className="flex flex-col gap-4 p-8">
         <Skeleton className="h-8 w-2/3" />
         <div className="flex items-center gap-3">
           <Skeleton className="size-11 rounded-full" />

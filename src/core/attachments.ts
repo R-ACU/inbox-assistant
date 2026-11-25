@@ -2,6 +2,7 @@
  * Attachment policy. Only what passes here is ever handed to the model.
  * The declared MIME type is not trusted; the file's first bytes decide.
  */
+import { pick, type Locale } from "../shared/locale";
 export const ATTACHMENT_LIMITS = {
   maxBytes: 5 * 1024 * 1024,
   maxCount: 5,
@@ -44,24 +45,24 @@ export function inspectAttachment(input: {
   filename: string;
   contentType: string;
   content: Uint8Array;
-}): AttachmentVerdict {
+}, locale: Locale = "de"): AttachmentVerdict {
   const { filename, contentType, content } = input;
-  if (content.byteLength === 0) return { accepted: false, kind: null, reason: "Leere Datei." };
+  if (content.byteLength === 0) return { accepted: false, kind: null, reason: pick(locale, "Leere Datei.", "Empty file.") };
   if (content.byteLength > ATTACHMENT_LIMITS.maxBytes) {
-    return { accepted: false, kind: null, reason: "Größer als 5 MB." };
+    return { accepted: false, kind: null, reason: pick(locale, "Größer als 5 MB.", "Larger than 5 MB.") };
   }
   // Double extensions like rechnung.pdf.exe are rejected outright.
   if (/\.(exe|js|vbs|bat|cmd|scr|ps1|msi|jar|html?|svg|zip|docm|xlsm)$/i.test(filename)) {
-    return { accepted: false, kind: null, reason: "Dateityp nicht erlaubt." };
+    return { accepted: false, kind: null, reason: pick(locale, "Dateityp nicht erlaubt.", "File type not allowed.") };
   }
   const kind = sniff(content);
-  if (!kind) return { accepted: false, kind: null, reason: "Kein PDF, PNG oder JPEG." };
+  if (!kind) return { accepted: false, kind: null, reason: pick(locale, "Kein PDF, PNG oder JPEG.", "Not a PDF, PNG or JPEG.") };
   if (!EXT[kind].test(filename)) {
-    return { accepted: false, kind, reason: "Dateiendung passt nicht zum Inhalt." };
+    return { accepted: false, kind, reason: pick(locale, "Dateiendung passt nicht zum Inhalt.", "File extension does not match the content.") };
   }
   const declared = contentType.toLowerCase().split(";")[0]?.trim() ?? "";
   if (declared !== MIME[kind] && declared !== "application/octet-stream") {
-    return { accepted: false, kind, reason: "Angegebener Typ passt nicht zum Inhalt." };
+    return { accepted: false, kind, reason: pick(locale, "Angegebener Typ passt nicht zum Inhalt.", "Declared type does not match the content.") };
   }
   return { accepted: true, kind, reason: null };
 }

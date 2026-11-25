@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { Category } from "../../src/shared/schemas";
 import type { MailStatus } from "../../src/shared/types";
+import { INTL_LOCALE, TIME_ZONE, t } from "./i18n";
 
 // ---------------------------------------------------------------- API
 
@@ -46,7 +47,7 @@ export async function api<T>(path: string, init: { method?: string; body?: unkno
     clearViewCache();
     unauthorizedListeners.forEach((fn) => fn());
   }
-  if (!res.ok) throw new ApiError(res.status, data.error ?? `Fehler ${res.status}`);
+  if (!res.ok) throw new ApiError(res.status, data.error ?? t(`Fehler ${res.status}`, `Error ${res.status}`));
   // A change can show on every view: fetch everything cached again, in the background.
   if (method !== "GET" && !path.startsWith("/api/auth/")) refreshViewCache();
   return data as T;
@@ -161,19 +162,19 @@ export function usePath(): string {
 
 // ---------------------------------------------------------------- formatting
 
-const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+const eur = new Intl.NumberFormat(INTL_LOCALE, { style: "currency", currency: "EUR" });
 export const formatCents = (cents: number) => eur.format(cents / 100);
-export const formatEuro = (value: number | null | undefined) => (value === null || value === undefined ? "nicht erkannt" : eur.format(value));
+export const formatEuro = (value: number | null | undefined) => (value === null || value === undefined ? t("nicht erkannt", "not read") : eur.format(value));
 
-const dateTime = new Intl.DateTimeFormat("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
-const dateOnly = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Berlin" });
-const dayShort = new Intl.DateTimeFormat("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "UTC" });
-const dayLong = new Intl.DateTimeFormat("de-DE", { day: "numeric", month: "long", timeZone: "UTC" });
+const dateTime = new Intl.DateTimeFormat(INTL_LOCALE, { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE });
+const dateOnly = new Intl.DateTimeFormat(INTL_LOCALE, { day: "2-digit", month: "2-digit", year: "numeric", timeZone: TIME_ZONE });
+const dayShort = new Intl.DateTimeFormat(INTL_LOCALE, { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "UTC" });
+const dayLong = new Intl.DateTimeFormat(INTL_LOCALE, { day: "numeric", month: "long", timeZone: "UTC" });
 
 export const formatDateTime = (iso: string) => dateTime.format(new Date(iso));
-const timeOnly = new Intl.DateTimeFormat("de-DE", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
-const dayMonth = new Intl.DateTimeFormat("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", timeZone: "Europe/Berlin" });
-const berlinDay = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Berlin", year: "numeric", month: "2-digit", day: "2-digit" });
+const timeOnly = new Intl.DateTimeFormat(INTL_LOCALE, { hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE });
+const dayMonth = new Intl.DateTimeFormat(INTL_LOCALE, { weekday: "short", day: "2-digit", month: "2-digit", timeZone: TIME_ZONE });
+const berlinDay = new Intl.DateTimeFormat("en-CA", { timeZone: TIME_ZONE, year: "numeric", month: "2-digit", day: "2-digit" });
 /** Compact time for list rows: the time for today, otherwise weekday and date. */
 export const formatListTime = (iso: string) => {
   const d = new Date(iso);
@@ -185,24 +186,35 @@ export const formatDayLong = (isoDate: string) => dayLong.format(new Date(`${iso
 
 // ---------------------------------------------------------------- vocabulary
 
-export const CATEGORY_LABEL: Record<Category, string> = {
-  invoice: "Rechnung",
-  inquiry: "Anfrage",
-  other: "Sonstiges",
-  suspicious: "Verdächtig",
-};
+export const CATEGORY_LABEL: Record<Category, string> = t(
+  { invoice: "Rechnung", inquiry: "Anfrage", other: "Sonstiges", suspicious: "Verdächtig" },
+  { invoice: "Invoice", inquiry: "Enquiry", other: "Other", suspicious: "Suspicious" },
+);
 
-export const STATUS_LABEL: Record<MailStatus, string> = {
-  awaiting_approval: "Wartet auf Freigabe",
-  needs_review: "Prüfen",
-  quarantined: "Quarantäne",
-  filed: "Abgelegt",
-  approved: "Freigegeben, Versand läuft",
-  delivery_failed: "Versand fehlgeschlagen",
-  sent: "Gesendet",
-  discarded: "Verworfen",
-  resolved: "Erledigt",
-};
+export const STATUS_LABEL: Record<MailStatus, string> = t<Record<MailStatus, string>>(
+  {
+    awaiting_approval: "Wartet auf Freigabe",
+    needs_review: "Prüfen",
+    quarantined: "Quarantäne",
+    filed: "Abgelegt",
+    approved: "Freigegeben, Versand läuft",
+    delivery_failed: "Versand fehlgeschlagen",
+    sent: "Gesendet",
+    discarded: "Verworfen",
+    resolved: "Erledigt",
+  },
+  {
+    awaiting_approval: "Awaiting approval",
+    needs_review: "Review",
+    quarantined: "Quarantine",
+    filed: "Filed",
+    approved: "Approved, sending",
+    delivery_failed: "Sending failed",
+    sent: "Sent",
+    discarded: "Discarded",
+    resolved: "Done",
+  },
+);
 
 export const STATUS_TONE: Record<MailStatus, "neutral" | "warn" | "bad" | "good" | "quiet"> = {
   awaiting_approval: "warn",

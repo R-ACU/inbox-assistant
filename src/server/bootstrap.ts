@@ -8,8 +8,8 @@ import type { AppConfig } from "./config";
 
 export function createProvider(config: AppConfig): LlmProvider {
   return config.llmMode === "claude"
-    ? new ClaudeProvider(config.anthropicApiKey!, config.models)
-    : MockProvider.fromFile(config.mockResponses, config.models);
+    ? new ClaudeProvider(config.anthropicApiKey!, config.models, config.locale)
+    : MockProvider.fromFile(config.mockResponses, config.models, config.locale);
 }
 
 /** Loads .env from the project folder only. The key is never read from the global environment file of the machine. */

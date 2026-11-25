@@ -1,6 +1,6 @@
 /**
  * Accent per company and light or dark mode.
- * A link like `/?firma=wagemann` picks the accent colour of the company the demo is shown to;
+ * A link like `/?firma=wagemann` (or `/?company=wagemann`) picks the accent colour of the company the demo is shown to;
  * anything that is not on the fixed list falls back to the neutral theme. The value from the URL is
  * only ever used as a lookup key: what reaches the DOM is the key from THEMES and its fixed label,
  * never the raw input. The choice is kept in sessionStorage, so it survives the login and reloads.
@@ -18,6 +18,8 @@ export type ThemeSlug = keyof typeof THEMES;
 export const THEME_SLUGS = Object.keys(THEMES) as ThemeSlug[];
 export const DEFAULT_THEME: ThemeSlug = "neutral";
 export const THEME_PARAM = "firma";
+/** English name of the same parameter (`/?company=wagemann`); checked first, both work in both languages. */
+export const THEME_PARAM_EN = "company";
 export const THEME_STORAGE_KEY = "inbox-assistant.theme";
 
 /** Maps any input to a known theme. Comparison is exact after trim and lower case; no prototype lookups. */
@@ -30,6 +32,7 @@ export function resolveTheme(raw: unknown): ThemeSlug {
 /** The URL parameter wins when present (also when it is invalid: then neutral); otherwise the stored choice. */
 export function pickTheme(search: string, stored: string | null): ThemeSlug {
   const params = new URLSearchParams(search);
+  if (params.has(THEME_PARAM_EN)) return resolveTheme(params.get(THEME_PARAM_EN));
   if (params.has(THEME_PARAM)) return resolveTheme(params.get(THEME_PARAM));
   return resolveTheme(stored);
 }

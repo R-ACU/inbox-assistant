@@ -136,9 +136,9 @@ export function withEmlDate(raw: Buffer, date: Date): Buffer {
   return Buffer.from(head.replace(DATE_HEADER, `Date: ${value}`) + text.slice(end), "latin1");
 }
 
-/** All fixture mails (test set plus demo extras), as file paths. */
-export function fixtureMailFiles(root = process.cwd()): string[] {
-  const dir = join(root, "fixtures", "mails");
+/** All fixture mails (test set plus demo extras) of one language's fixture folder, as file paths. */
+export function fixtureMailFiles(fixturesDir = join(process.cwd(), "fixtures")): string[] {
+  const dir = join(fixturesDir, "mails");
   const extra = join(dir, "extra");
   const list = (d: string) => readdirSync(d).filter((f) => f.endsWith(".eml")).map((f) => join(d, f));
   let extras: string[] = [];
@@ -154,8 +154,8 @@ export function fixtureMailFiles(root = process.cwd()): string[] {
  * The move for the whole fixture set, so the seed, `--skip` and a mail sent later
  * through n8n all land on the same days.
  */
-export function fixtureShift(now: Date, root = process.cwd()): DemoShift {
-  const dates = fixtureMailFiles(root)
+export function fixtureShift(now: Date, fixturesDir = join(process.cwd(), "fixtures")): DemoShift {
+  const dates = fixtureMailFiles(fixturesDir)
     .map((f) => emlDate(readFileSync(f)))
     .filter((d): d is Date => d !== null);
   return planDemoShift(dates, now);

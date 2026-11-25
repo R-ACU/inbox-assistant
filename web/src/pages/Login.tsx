@@ -5,6 +5,7 @@ import { BrandMark, DemoNote, ModeToggle, usePageTitle } from "../components/she
 import { Button } from "../components/ui/button";
 import { Label } from "../components/ui/input";
 import { PasswordInput } from "../components/ui/password-input";
+import { t } from "../i18n";
 import { ApiError, api } from "../lib";
 import { cn } from "../utils";
 
@@ -17,15 +18,15 @@ export interface Session {
 }
 
 const PROMISES = [
-  { icon: Calculator, text: "Rechnungen auf den Cent geprüft" },
-  { icon: Send, text: "Antworten erst nach Ihrem Klick" },
-  { icon: ShieldCheck, text: "Betrugsversuche in Quarantäne" },
+  { icon: Calculator, text: t("Rechnungen auf den Cent geprüft", "Invoices checked to the cent") },
+  { icon: Send, text: t("Antworten erst nach Ihrem Klick", "Replies only after your click") },
+  { icon: ShieldCheck, text: t("Betrugsversuche in Quarantäne", "Suspicious mail in quarantine") },
 ];
 
 const ease = [0.23, 1, 0.32, 1] as const;
 
 export function LoginPage({ onDone, demoPassword = null }: { onDone: (s: Session) => void; demoPassword?: string | null }) {
-  usePageTitle("Anmelden");
+  usePageTitle(t("Anmelden", "Sign in"));
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"form" | "demo" | null>(null);
@@ -38,7 +39,7 @@ export function LoginPage({ onDone, demoPassword = null }: { onDone: (s: Session
     try {
       onDone(await api<Session>("/api/auth/login", { method: "POST", body: { password: value } }));
     } catch (err) {
-      setError(err instanceof ApiError && err.status === 401 ? "Das Passwort stimmt nicht." : (err as Error).message);
+      setError(err instanceof ApiError && err.status === 401 ? t("Das Passwort stimmt nicht.", "Wrong password.") : (err as Error).message);
       setShake((s) => s + 1);
     } finally {
       setBusy(null);
@@ -75,8 +76,8 @@ export function LoginPage({ onDone, demoPassword = null }: { onDone: (s: Session
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease, delay: 0.25 }}
         >
-          <p className="text-[13px] font-medium text-glass-ink-2">Malerbetrieb Hofmann &amp; Kraft</p>
-          <p className="mt-1.5 text-[26px] leading-tight font-semibold tracking-[-0.02em] sm:text-[30px]">Weniger Büro. Mehr Baustelle.</p>
+          <p className="text-[13px] font-medium text-glass-ink-2">{t("Malerbetrieb Hofmann & Kraft", "Brennan & Doyle Painting Ltd")}</p>
+          <p className="mt-1.5 text-[26px] leading-tight font-semibold tracking-[-0.02em] sm:text-[30px]">{t("Weniger Büro. Mehr Baustelle.", "Less office. More site.")}</p>
           <ul className="mt-6 hidden flex-wrap gap-2 sm:flex">
             {PROMISES.map(({ icon: Icon, text }, i) => (
               <motion.li
@@ -101,8 +102,8 @@ export function LoginPage({ onDone, demoPassword = null }: { onDone: (s: Session
           <div className="flex items-center gap-3">
             <BrandMark size={36} />
             <span className="leading-tight">
-              <span className="block text-[14px] font-semibold text-ink">Hofmann &amp; Kraft</span>
-              <span className="block text-[12.5px] text-ink-3">Posteingang-Assistent</span>
+              <span className="block text-[14px] font-semibold text-ink">{t("Hofmann & Kraft", "Brennan & Doyle")}</span>
+              <span className="block text-[12.5px] text-ink-3">{t("Posteingang-Assistent", "Inbox assistant")}</span>
             </span>
           </div>
           <div className="flex items-center gap-3">
@@ -118,11 +119,11 @@ export function LoginPage({ onDone, demoPassword = null }: { onDone: (s: Session
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.45, ease, delay: 0.1 }}
           >
-            <h1 className="text-[30px] leading-tight font-medium tracking-[-0.03em] text-ink">Willkommen zurück</h1>
-            <p className={cn("mt-2 text-[14px] text-ink-2", demoPassword ? "mb-6" : "mb-8")}>Ihr Posteingang ist sortiert.</p>
+            <h1 className="text-[30px] leading-tight font-medium tracking-[-0.03em] text-ink">{t("Willkommen zurück", "Welcome back")}</h1>
+            <p className={cn("mt-2 text-[14px] text-ink-2", demoPassword ? "mb-6" : "mb-8")}>{t("Ihr Posteingang ist sortiert.", "Your inbox is sorted.")}</p>
             {demoPassword && (
               <motion.section
-                aria-label="Demo-Zugang"
+                aria-label={t("Demo-Zugang", "Demo access")}
                 className="mb-6 flex items-center gap-3 rounded-[24px] bg-surface p-2 shadow-[0_1px_2px_rgb(16_24_40/0.06)]"
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -132,15 +133,15 @@ export function LoginPage({ onDone, demoPassword = null }: { onDone: (s: Session
                   <KeyRound className="size-[18px] text-accent-text" aria-hidden />
                 </span>
                 <span className="min-w-0 flex-1 leading-tight">
-                  <span className="block text-[12.5px] text-ink-3">Demo-Zugang</span>
+                  <span className="block text-[12.5px] text-ink-3">{t("Demo-Zugang", "Demo access")}</span>
                   <span className="mt-0.5 block truncate text-[15px] font-medium tracking-[-0.01em] text-ink">{demoPassword}</span>
                 </span>
                 <Button type="button" variant="soft" busy={busy === "demo"} disabled={busy !== null} onClick={signInAsDemo} icon={<ArrowRight aria-hidden />} className="flex-row-reverse">
-                  Demo öffnen
+                  {t("Demo öffnen", "Open demo")}
                 </Button>
               </motion.section>
             )}
-            <Label htmlFor="password">Passwort</Label>
+            <Label htmlFor="password">{t("Passwort", "Password")}</Label>
             <motion.div key={shake} animate={shake ? { x: [0, -6, 6, -4, 4, 0] } : undefined} transition={{ duration: 0.32 }}>
               <PasswordInput
                 id="password"
@@ -158,13 +159,13 @@ export function LoginPage({ onDone, demoPassword = null }: { onDone: (s: Session
               </motion.p>
             )}
             <Button type="submit" variant="primary" busy={busy === "form"} disabled={!password || busy !== null} size="lg" className="mt-5 h-12 w-full" icon={<KeyRound aria-hidden />}>
-              Anmelden
+              {t("Anmelden", "Sign in")}
             </Button>
-            <p className="mt-6 text-[12.5px] text-ink-3">Testsystem mit erfundenen Daten.</p>
+            <p className="mt-6 text-[12.5px] text-ink-3">{t("Testsystem mit erfundenen Daten.", "Test system with invented data.")}</p>
             <DemoNote className="mt-3 sm:hidden" />
           </motion.form>
         </div>
-        <p className="px-6 pb-5 text-[12px] text-ink-3 sm:px-10">Bild: für diese Demo erzeugt, siehe Credits</p>
+        <p className="px-6 pb-5 text-[12px] text-ink-3 sm:px-10">{t("Bild: für diese Demo erzeugt, siehe Credits", "Image: generated for this demo, see credits")}</p>
       </main>
     </div>
   );

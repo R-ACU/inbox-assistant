@@ -36,7 +36,9 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { formatIban } from "../../../../src/core/iban";
 import { replyBlocked } from "../../../../src/core/reply";
 import type { AuditEvent, Finding, InvoiceResult, ProcessedMail } from "../../../../src/shared/types";
-import { FAQ } from "../../../../src/tenant/profile";
+import { FAQ as FAQ_DE } from "../../../../src/tenant/profile";
+import { FAQ_EN } from "../../../../src/tenant/profile-en";
+import { INTL_LOCALE, ROUTES, TIME_ZONE, t } from "../../i18n";
 import { CATEGORY_LABEL, api, formatCents, formatDate, formatDateTime, formatEuro, navigate, useApi } from "../../lib";
 import { cn } from "../../utils";
 import { BrandGlyph, BrandLogo } from "../brand";
@@ -55,23 +57,44 @@ const ease = [0.23, 1, 0.32, 1] as const;
 // ---------------------------------------------------------------- vocabulary
 
 /** One to three words per event; the server's detail sentence opens on hover. */
-const EVENT_LABEL: Record<string, string> = {
-  eingang: "Eingegangen",
-  freigegeben: "Freigegeben",
-  versendet: "Versendet",
-  verworfen: "Verworfen",
-  entwurf_geaendert: "Entwurf bearbeitet",
-  erledigt: "Erledigt",
-  nach_pruefung_abgelegt: "Nach Prüfung abgelegt",
-  n8n_fortgesetzt: "n8n übernimmt",
-  n8n_nicht_erreichbar: "n8n nicht erreichbar",
-  erneut_senden: "Erneut gesendet",
-  versand_fehlgeschlagen: "Versand fehlgeschlagen",
-  versand_abgebrochen: "Versand abgebrochen",
-  antwort_angefordert: "Antwort entworfen",
-  entwurf_fehlgeschlagen: "Entwurf fehlgeschlagen",
-};
-const STEP_LABEL: Record<string, string> = { classify: "Einordnen", extract_invoice: "Beleg lesen", draft_reply: "Antwort entwerfen" };
+const EVENT_LABEL: Record<string, string> = t<Record<string, string>>(
+  {
+    eingang: "Eingegangen",
+    freigegeben: "Freigegeben",
+    versendet: "Versendet",
+    verworfen: "Verworfen",
+    entwurf_geaendert: "Entwurf bearbeitet",
+    erledigt: "Erledigt",
+    nach_pruefung_abgelegt: "Nach Prüfung abgelegt",
+    n8n_fortgesetzt: "n8n übernimmt",
+    n8n_nicht_erreichbar: "n8n nicht erreichbar",
+    erneut_senden: "Erneut gesendet",
+    versand_fehlgeschlagen: "Versand fehlgeschlagen",
+    versand_abgebrochen: "Versand abgebrochen",
+    antwort_angefordert: "Antwort entworfen",
+    entwurf_fehlgeschlagen: "Entwurf fehlgeschlagen",
+  },
+  {
+    eingang: "Received",
+    freigegeben: "Approved",
+    versendet: "Sent",
+    verworfen: "Discarded",
+    entwurf_geaendert: "Draft edited",
+    erledigt: "Done",
+    nach_pruefung_abgelegt: "Filed after review",
+    n8n_fortgesetzt: "n8n takes over",
+    n8n_nicht_erreichbar: "n8n unreachable",
+    erneut_senden: "Sent again",
+    versand_fehlgeschlagen: "Sending failed",
+    versand_abgebrochen: "Sending cancelled",
+    antwort_angefordert: "Reply drafted",
+    entwurf_fehlgeschlagen: "Draft failed",
+  },
+);
+const STEP_LABEL: Record<string, string> = t<Record<string, string>>(
+  { classify: "Einordnen", extract_invoice: "Beleg lesen", draft_reply: "Antwort entwerfen" },
+  { classify: "Classify", extract_invoice: "Read document", draft_reply: "Draft reply" },
+);
 const sentence = (detail: string) => (/[.!?)]$/.test(detail) ? detail : `${detail}.`);
 
 /** The strongest reasons first, at most a few hints. */
@@ -126,15 +149,15 @@ function useDraftEditor(record: ProcessedMail, onDone: () => void): EditorState 
         const updated = await api<ProcessedMail>(`/api/mails/${record.id}/draft`, { method: "PUT", body: { subject, body } });
         setFindings(updated.draft!.findings);
         setSaved({ subject, body });
-        toast("Änderungen gespeichert");
+        toast(t("Änderungen gespeichert", "Changes saved"));
       } else if (kind === "send") {
         const updated = await api<ProcessedMail>(`/api/mails/${record.id}/approve`, { method: "POST", body: { subject, body } });
-        toast(updated.status === "sent" || updated.draft?.requested?.sentAt ? "Antwort gesendet" : "Freigegeben, n8n versendet die Antwort");
+        toast(updated.status === "sent" || updated.draft?.requested?.sentAt ? t("Antwort gesendet", "Reply sent") : t("Freigegeben, n8n versendet die Antwort", "Approved, n8n is sending the reply"));
         refreshCounts();
         onDone();
       } else {
-        await api(`/api/mails/${record.id}/discard`, { method: "POST", body: { reason: "In der Freigabe verworfen" } });
-        toast("Entwurf verworfen", "info");
+        await api(`/api/mails/${record.id}/discard`, { method: "POST", body: { reason: t("In der Freigabe verworfen", "Discarded in approval") } });
+        toast(t("Entwurf verworfen", "Draft discarded"), "info");
         refreshCounts();
         onDone();
       }
@@ -176,12 +199,12 @@ function SectionLabel({ children, aside }: { children: ReactNode; aside?: ReactN
   );
 }
 
-function MailText({ record, label = "Nachricht" }: { record: ProcessedMail; label?: string }) {
+function MailText({ record, label = t("Nachricht", "Message") }: { record: ProcessedMail; label?: string }) {
   return (
     <section aria-label={label}>
-      <SectionLabel aside={record.mail.hadHtml ? <Badge tone="neutral">HTML als Text</Badge> : undefined}>{label}</SectionLabel>
+      <SectionLabel aside={record.mail.hadHtml ? <Badge tone="neutral">{t("HTML als Text", "HTML as text")}</Badge> : undefined}>{label}</SectionLabel>
       <div className="rounded-[22px] bg-surface-2 px-6 py-5">
-        <p className="text-[14px] leading-[1.7] break-words whitespace-pre-wrap text-ink-2">{record.mail.text || "Kein Text."}</p>
+        <p className="text-[14px] leading-[1.7] break-words whitespace-pre-wrap text-ink-2">{record.mail.text || t("Kein Text.", "No text.")}</p>
       </div>
     </section>
   );
@@ -204,10 +227,10 @@ function DraftEditor({ record, editor }: { record: ProcessedMail; editor: Editor
           <Sparkles className="size-[18px]" aria-hidden />
         </span>
         <h3 id="draft-title" className="text-[16px] font-medium text-ink">
-          Antwortentwurf
+          {t("Antwortentwurf", "Reply draft")}
         </h3>
         <Badge tone={edited ? "neutral" : "accent"} className="ml-auto bg-surface">
-          {edited ? "bearbeitet" : editor.requested ? "auf Wunsch" : "aus Ihrer FAQ"}
+          {edited ? t("bearbeitet", "edited") : editor.requested ? t("auf Wunsch", "on request") : t("aus Ihrer FAQ", "from your FAQ")}
         </Badge>
       </div>
       <AnimatePresence initial={false}>
@@ -219,29 +242,29 @@ function DraftEditor({ record, editor }: { record: ProcessedMail; editor: Editor
             transition={{ duration: 0.22, ease }}
             className="overflow-hidden"
           >
-            <div role="note" aria-label="Hinweis zum Entwurf" className="mb-5 rounded-[18px] bg-bad-soft px-4 py-3.5">
+            <div role="note" aria-label={t("Hinweis zum Entwurf", "Draft flag")} className="mb-5 rounded-[18px] bg-bad-soft px-4 py-3.5">
               <Findings findings={editor.findings} />
             </div>
           </motion.div>
         )}
       </AnimatePresence>
-      <Label htmlFor="draft-subject">Betreff</Label>
+      <Label htmlFor="draft-subject">{t("Betreff", "Subject")}</Label>
       <Input id="draft-subject" value={editor.subject} onChange={(e) => editor.setSubject(e.target.value)} maxLength={200} className="mb-4" />
-      <Label htmlFor="draft-body">Text</Label>
+      <Label htmlFor="draft-body">{t("Text", "Text")}</Label>
       <Textarea id="draft-body" ref={bodyRef} value={editor.body} onChange={(e) => editor.setBody(e.target.value)} maxLength={5000} rows={10} className="resize-none overflow-hidden" />
     </section>
   );
 }
 
 function Verdict({ ok }: { ok: boolean | null }) {
-  if (ok === null) return <span className="text-ink-3">offen</span>;
+  if (ok === null) return <span className="text-ink-3">{t("offen", "open")}</span>;
   return ok ? (
     <span className="inline-flex items-center gap-1.5 font-medium text-good">
-      <Check className="size-4" aria-hidden /> stimmt
+      <Check className="size-4" aria-hidden /> {t("stimmt", "matches")}
     </span>
   ) : (
     <span className="inline-flex items-center gap-1.5 font-medium text-bad">
-      <X className="size-4" aria-hidden /> weicht ab
+      <X className="size-4" aria-hidden /> {t("weicht ab", "differs")}
     </span>
   );
 }
@@ -263,39 +286,39 @@ function InvoiceCard({ invoice }: { invoice: InvoiceResult }) {
   const cents = (v: number | null) => (v === null ? null : Math.round(v * 100));
   // Tolerance in cents: tax may differ by one cent through rounding per line.
   const totals = [
-    { label: "Netto", printed: cents(ex.net_total), computed: c?.lineSum ?? null, tolerance: 0 },
-    { label: `USt. ${ex.tax_rate_percent ?? "?"} %`, printed: cents(ex.tax_total), computed: c?.expectedTax ?? null, tolerance: 1 },
-    { label: "Brutto", printed: cents(ex.gross_total), computed: c?.expectedGross ?? null, tolerance: 1 },
+    { label: t("Netto", "Net"), printed: cents(ex.net_total), computed: c?.lineSum ?? null, tolerance: 0 },
+    { label: t(`USt. ${ex.tax_rate_percent ?? "?"} %`, `VAT ${ex.tax_rate_percent ?? "?"}%`), printed: cents(ex.tax_total), computed: c?.expectedTax ?? null, tolerance: 1 },
+    { label: t("Brutto", "Gross"), printed: cents(ex.gross_total), computed: c?.expectedGross ?? null, tolerance: 1 },
   ];
-  const verdict = (t: (typeof totals)[number]) => (t.printed === null || t.computed === null ? null : Math.abs(t.printed - t.computed) <= t.tolerance);
-  const supplier = ex.supplier_name ?? "Lieferant nicht erkannt";
+  const verdict = (row: (typeof totals)[number]) => (row.printed === null || row.computed === null ? null : Math.abs(row.printed - row.computed) <= row.tolerance);
+  const supplier = ex.supplier_name ?? t("Lieferant nicht erkannt", "Supplier not read");
 
   if (!ex.readable) {
     return (
-      <section aria-label="Ausgelesener Beleg" className="flex items-center gap-4 rounded-[24px] bg-surface-2 p-5">
+      <section aria-label={t("Ausgelesener Beleg", "Document read-out")} className="flex items-center gap-4 rounded-[24px] bg-surface-2 p-5">
         <span className="grid size-12 shrink-0 place-items-center rounded-full bg-surface text-accent-text">
           <FileWarning className="size-[22px]" strokeWidth={1.8} aria-hidden />
         </span>
         <div className="min-w-0 text-[13.5px] leading-snug">
-          <p className="text-[15px] font-medium text-ink">Beleg unlesbar</p>
-          <p className="mt-0.5 text-ink-2">{ex.unreadable_reason ?? "Bitte das Original ansehen."}</p>
+          <p className="text-[15px] font-medium text-ink">{t("Beleg unlesbar", "Document unreadable")}</p>
+          <p className="mt-0.5 text-ink-2">{ex.unreadable_reason ?? t("Bitte das Original ansehen.", "Please check the original.")}</p>
         </div>
       </section>
     );
   }
 
   return (
-    <section aria-label="Ausgelesener Beleg" className="rounded-[24px] bg-surface-2 p-2">
+    <section aria-label={t("Ausgelesener Beleg", "Document read-out")} className="rounded-[24px] bg-surface-2 p-2">
       <div className="flex items-center gap-3.5 px-4 pt-3 pb-4">
         <Avatar name={supplier} size="lg" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13px] text-ink-2">{supplier}</p>
-          <p className="tnum text-[28px] leading-tight font-medium tracking-[-0.02em] text-ink">{ex.gross_total === null ? "Betrag fehlt" : formatEuro(ex.gross_total)}</p>
+          <p className="tnum text-[28px] leading-tight font-medium tracking-[-0.02em] text-ink">{ex.gross_total === null ? t("Betrag fehlt", "Amount missing") : formatEuro(ex.gross_total)}</p>
         </div>
         {invoice.ok && (
           <Badge tone="good" size="md">
             <Check aria-hidden />
-            Summen stimmen
+            {t("Summen stimmen", "Totals match")}
           </Badge>
         )}
       </div>
@@ -307,35 +330,35 @@ function InvoiceCard({ invoice }: { invoice: InvoiceResult }) {
             transition={{ duration: 0.26 }}
             className="mb-5 rounded-[18px] bg-bad-soft px-4 py-3.5"
             role="note"
-            aria-label="Prüfhinweis"
+            aria-label={t("Prüfhinweis", "Review flag")}
           >
             <Findings findings={errors} />
           </motion.div>
         )}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,2fr)]">
-          <Tile label="Nummer">{ex.invoice_number ?? "fehlt"}</Tile>
-          <Tile label="Datum">{ex.invoice_date ? formatDate(ex.invoice_date) : "fehlt"}</Tile>
+          <Tile label={t("Nummer", "Number")}>{ex.invoice_number ?? t("fehlt", "missing")}</Tile>
+          <Tile label={t("Datum", "Date")}>{ex.invoice_date ? formatDate(ex.invoice_date) : t("fehlt", "missing")}</Tile>
           <div className="col-span-2 sm:col-span-1">
-            <Tile label="IBAN">{ex.iban ? formatIban(ex.iban) : "keine"}</Tile>
+            <Tile label="IBAN">{ex.iban ? formatIban(ex.iban) : t("keine", "none")}</Tile>
           </div>
         </div>
 
         <div className="mt-5 overflow-x-auto">
           <table className="w-full min-w-[440px] text-[13.5px]">
-            <caption className="sr-only">Positionen</caption>
+            <caption className="sr-only">{t("Positionen", "Line items")}</caption>
             <thead>
               <tr className="text-left text-[12.5px] text-ink-3">
-                <th className="py-2 pr-3 font-normal">Position</th>
-                <th className="py-2 pr-3 text-right font-normal">Menge</th>
-                <th className="py-2 pr-3 text-right font-normal">Preis</th>
-                <th className="py-2 text-right font-normal">Gesamt</th>
+                <th className="py-2 pr-3 font-normal">{t("Position", "Item")}</th>
+                <th className="py-2 pr-3 text-right font-normal">{t("Menge", "Qty")}</th>
+                <th className="py-2 pr-3 text-right font-normal">{t("Preis", "Price")}</th>
+                <th className="py-2 text-right font-normal">{t("Gesamt", "Total")}</th>
               </tr>
             </thead>
             <tbody>
               {ex.line_items.map((l, i) => (
                 <tr key={i} className="border-t border-line">
                   <td className="py-2.5 pr-3 text-ink">{l.description}</td>
-                  <td className="tnum py-2.5 pr-3 text-right text-ink-2">{l.quantity.toLocaleString("de-DE")}</td>
+                  <td className="tnum py-2.5 pr-3 text-right text-ink-2">{l.quantity.toLocaleString(INTL_LOCALE)}</td>
                   <td className="tnum py-2.5 pr-3 text-right text-ink-2">{formatEuro(l.unit_price)}</td>
                   <td className="tnum py-2.5 text-right text-ink">{formatEuro(l.line_total)}</td>
                 </tr>
@@ -345,40 +368,40 @@ function InvoiceCard({ invoice }: { invoice: InvoiceResult }) {
         </div>
 
         <div className="mt-6 mb-2 flex items-center gap-2">
-          <h4 className="text-[13px] font-medium text-ink-3">Nachgerechnet</h4>
-          <Tooltip content="Im Code in Cent, Steuer mit 1 Cent Toleranz">
-            <button type="button" aria-label="Wie nachgerechnet wird" className="grid size-6 place-items-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink">
+          <h4 className="text-[13px] font-medium text-ink-3">{t("Nachgerechnet", "Recalculated")}</h4>
+          <Tooltip content={t("Im Code in Cent, Steuer mit 1 Cent Toleranz", "In code, in cents; VAT within 1 cent")}>
+            <button type="button" aria-label={t("Wie nachgerechnet wird", "How it is recalculated")} className="grid size-6 place-items-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink">
               <Info className="size-3.5" aria-hidden />
             </button>
           </Tooltip>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[440px] border-separate border-spacing-y-1 text-[13.5px]">
-            <caption className="sr-only">Summenprüfung</caption>
+            <caption className="sr-only">{t("Summenprüfung", "Totals check")}</caption>
             <thead>
               <tr className="text-left text-[12.5px] text-ink-3">
-                <th className="px-3 py-1 font-normal">Summe</th>
-                <th className="px-3 py-1 text-right font-normal whitespace-nowrap">laut Beleg</th>
-                <th className="px-3 py-1 text-right font-normal">berechnet</th>
+                <th className="px-3 py-1 font-normal">{t("Summe", "Total")}</th>
+                <th className="px-3 py-1 text-right font-normal whitespace-nowrap">{t("laut Beleg", "on document")}</th>
+                <th className="px-3 py-1 text-right font-normal">{t("berechnet", "calculated")}</th>
                 <th className="px-3 py-1 text-right font-normal">
-                  <span className="sr-only">Ergebnis</span>
+                  <span className="sr-only">{t("Ergebnis", "Result")}</span>
                 </th>
               </tr>
             </thead>
             <tbody>
-              {totals.map((t, i) => {
-                const ok = verdict(t);
+              {totals.map((row, i) => {
+                const ok = verdict(row);
                 return (
                   <motion.tr
-                    key={t.label}
+                    key={row.label}
                     initial={{ opacity: 0, x: -6 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ duration: 0.24, delay: 0.08 + i * 0.06 }}
                     className={cn("[&>td]:py-2.5 [&>td:first-child]:rounded-l-full [&>td:last-child]:rounded-r-full", ok === false ? "[&>td]:bg-bad-soft" : "[&>td]:bg-surface-2")}
                   >
-                    <td className="px-3 whitespace-nowrap text-ink">{t.label}</td>
-                    <td className="tnum px-3 text-right text-ink">{t.printed === null ? "fehlt" : formatCents(t.printed)}</td>
-                    <td className="tnum px-3 text-right text-ink">{t.computed === null ? "fehlt" : formatCents(t.computed)}</td>
+                    <td className="px-3 whitespace-nowrap text-ink">{row.label}</td>
+                    <td className="tnum px-3 text-right text-ink">{row.printed === null ? t("fehlt", "missing") : formatCents(row.printed)}</td>
+                    <td className="tnum px-3 text-right text-ink">{row.computed === null ? t("fehlt", "missing") : formatCents(row.computed)}</td>
                     <td className="px-3 text-right text-[13px] whitespace-nowrap">
                       <Verdict ok={ok} />
                     </td>
@@ -402,11 +425,12 @@ function SentReply({ record }: { record: ProcessedMail }) {
   if (!record.draft || record.status === "awaiting_approval") return null;
   // A reply the owner asked for keeps the mail's own status (an invoice stays filed), so "sent" is its own flag.
   const sent = record.status === "sent" || !!record.draft.requested?.sentAt;
-  const label = sent ? "Gesendete Antwort" : record.status === "delivery_failed" || record.status === "approved" ? "Freigegebene Antwort" : "Verworfener Entwurf";
+  const released = record.status === "delivery_failed" || record.status === "approved";
+  const label = sent ? t("Gesendete Antwort", "Sent reply") : released ? t("Freigegebene Antwort", "Approved reply") : t("Verworfener Entwurf", "Discarded draft");
   return (
     <section aria-label={label}>
       <SectionLabel>{label}</SectionLabel>
-      <div className={cn("rounded-[22px] px-6 py-5", label === "Verworfener Entwurf" ? "bg-surface-2" : "bg-accent-soft")}>
+      <div className={cn("rounded-[22px] px-6 py-5", !sent && !released ? "bg-surface-2" : "bg-accent-soft")}>
         <p className="mb-2 text-[13.5px] font-medium text-ink">{record.draft.draft.subject}</p>
         <p className="text-[14px] leading-[1.7] whitespace-pre-wrap text-ink-2">{record.draft.draft.body}</p>
       </div>
@@ -420,7 +444,7 @@ function Reading({ record, editor }: { record: ProcessedMail; editor: EditorStat
       <Header record={record} />
       <div className="mt-7 flex flex-col gap-6">
         {record.invoice && <InvoiceCard invoice={record.invoice} />}
-        <MailText record={record} label={editor && record.category === "inquiry" ? "Anfrage" : "Nachricht"} />
+        <MailText record={record} label={editor && record.category === "inquiry" ? t("Anfrage", "Enquiry") : t("Nachricht", "Message")} />
         {editor && <DraftEditor record={record} editor={editor} />}
         <SentReply record={record} />
       </div>
@@ -436,7 +460,7 @@ const TONE_ICON: Record<Tone, string> = { accent: "text-accent-text", bad: "text
 
 function StatusFrame({ tone, icon: Icon, eyebrow, title, children }: { tone: Tone; icon: LucideIcon; eyebrow: string; title: string; children?: ReactNode }) {
   return (
-    <section aria-label="Status" className={cn("rounded-[24px] p-5", TONE_BG[tone])}>
+    <section aria-label={t("Status", "Status")} className={cn("rounded-[24px] p-5", TONE_BG[tone])}>
       <div className="flex items-center gap-3.5">
         <motion.span
           initial={{ scale: 0.6, rotate: -20 }}
@@ -466,7 +490,7 @@ function Reasons({ findings }: { findings: Finding[] }) {
       <Findings findings={shown} />
       {findings.length > 2 && (
         <button type="button" onClick={() => setAll((a) => !a)} className="press mt-2.5 ml-6 rounded-full text-[12.5px] font-medium text-ink-2 underline-offset-4 hover:text-ink hover:underline">
-          {all ? "weniger" : `+${findings.length - 2} weitere`}
+          {all ? t("weniger", "less") : t(`+${findings.length - 2} weitere`, `+${findings.length - 2} more`)}
         </button>
       )}
     </div>
@@ -477,45 +501,45 @@ function DraftDecision({ editor, sendRef }: { editor: EditorState; sendRef: Reac
   const [confirm, setConfirm] = useState(false);
   const hints = editor.findings.filter((f) => f.severity !== "info").length;
   return (
-    <StatusFrame tone="accent" icon={Send} eyebrow="Freigabe" title="Antwort bereit">
+    <StatusFrame tone="accent" icon={Send} eyebrow={t("Freigabe", "Approval")} title={t("Antwort bereit", "Reply ready")}>
       {hints > 0 && (
         <p className="mt-4 flex items-center gap-2 text-[13.5px] font-medium text-bad">
           <TriangleAlert className="size-4" aria-hidden />
-          {hints === 1 ? "1 Hinweis im Entwurf" : `${hints} Hinweise im Entwurf`}
+          {hints === 1 ? t("1 Hinweis im Entwurf", "1 flag in the draft") : t(`${hints} Hinweise im Entwurf`, `${hints} flags in the draft`)}
         </p>
       )}
       <div className="mt-5 flex flex-col gap-2">
         {editor.error && <ErrorNote message={editor.error} />}
         <Button ref={sendRef} variant="primary" size="lg" className="w-full" icon={<Send aria-hidden />} busy={editor.busy === "send"} disabled={editor.busy !== null} onClick={() => editor.run("send")}>
-          {editor.dirty ? "Geändert senden" : "Senden"}
+          {editor.dirty ? t("Geändert senden", "Send edited") : t("Senden", "Send")}
         </Button>
         <AnimatePresence initial={false} mode="wait">
           {confirm ? (
             <motion.div key="confirm" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.16 }} className="flex flex-col gap-2.5 rounded-[18px] bg-surface p-3.5">
-              <p className="text-[13px] text-ink">{editor.requested ? "Es geht keine Antwort raus." : "Kunde bekommt keine Antwort."}</p>
+              <p className="text-[13px] text-ink">{editor.requested ? t("Es geht keine Antwort raus.", "No reply goes out.") : t("Kunde bekommt keine Antwort.", "Customer gets no reply.")}</p>
               <div className="flex gap-2">
                 <Button variant="danger" size="sm" busy={editor.busy === "discard"} onClick={() => editor.run("discard")}>
-                  Verwerfen
+                  {t("Verwerfen", "Discard")}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setConfirm(false)}>
-                  Behalten
+                  {t("Behalten", "Keep")}
                 </Button>
               </div>
             </motion.div>
           ) : (
             <motion.div key="actions" initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.16 }} className="grid grid-cols-2 gap-2">
               <Button variant="outline" className="border-transparent" icon={<Save aria-hidden />} busy={editor.busy === "save"} disabled={!editor.dirty || editor.busy !== null} onClick={() => editor.run("save")}>
-                Speichern
+                {t("Speichern", "Save")}
               </Button>
               <Button variant="danger-ghost" className="bg-surface hover:bg-bad-soft" icon={<Trash2 aria-hidden />} disabled={editor.busy !== null} onClick={() => setConfirm(true)}>
-                Verwerfen
+                {t("Verwerfen", "Discard")}
               </Button>
             </motion.div>
           )}
         </AnimatePresence>
         <p className="mt-2 flex items-center justify-center gap-2 text-[12.5px] text-ink-2">
           <BrandGlyph brand="n8n" className="size-5" />
-          Versand über n8n, erst nach Ihrem Klick
+          {t("Versand über n8n, erst nach Ihrem Klick", "Sent via n8n, only after your click")}
         </p>
       </div>
     </StatusFrame>
@@ -561,7 +585,7 @@ function ReplyButton({ record, onReady, className }: { record: ProcessedMail; on
     try {
       const updated = await api<ProcessedMail>(`/api/mails/${record.id}/reply`, { method: "POST" });
       const hints = updated.draft?.findings.filter((f) => f.severity !== "info").length ?? 0;
-      toast(hints === 0 ? "Entwurf bereit" : `Entwurf bereit, ${hints === 1 ? "1 Hinweis" : `${hints} Hinweise`}`);
+      toast(hints === 0 ? t("Entwurf bereit", "Draft ready") : t(`Entwurf bereit, ${hints === 1 ? "1 Hinweis" : `${hints} Hinweise`}`, `Draft ready, ${hints === 1 ? "1 flag" : `${hints} flags`}`));
       refreshCounts();
       onReady(updated.id);
     } catch (e) {
@@ -573,7 +597,7 @@ function ReplyButton({ record, onReady, className }: { record: ProcessedMail; on
     <div className={cn("flex flex-col gap-2", className)}>
       {error && <ErrorNote message={error} />}
       <Button variant="outline" className="w-full border-transparent" icon={<Reply aria-hidden />} busy={busy} disabled={busy} onClick={run}>
-        {busy ? "Wird entworfen" : "Antwort entwerfen"}
+        {busy ? t("Wird entworfen", "Drafting") : t("Antwort entwerfen", "Draft reply")}
       </Button>
     </div>
   );
@@ -589,31 +613,31 @@ function ReviewDecision({ record, onDone, onReplyReady }: { record: ProcessedMai
   );
   const canFile = record.status === "needs_review" && record.category === "invoice" && !!record.invoice?.extraction.readable;
   const title = quarantined
-    ? "Quarantäne"
+    ? t("Quarantäne", "Quarantine")
     : record.invoice && !record.invoice.extraction.readable
-      ? "Beleg unlesbar"
+      ? t("Beleg unlesbar", "Document unreadable")
       : record.invoice && !record.invoice.ok
-        ? "Summen weichen ab"
-        : "Bitte prüfen";
+        ? t("Summen weichen ab", "Totals differ")
+        : t("Bitte prüfen", "Please review");
   const review = (kind: "file" | "close") =>
     action.run(
       kind,
-      () => api(`/api/mails/${record.id}/review`, { method: "POST", body: { action: kind, note: kind === "file" ? "Nach Prüfung von Hand abgelegt" : "Geprüft und erledigt" } }),
-      () => (kind === "file" ? "Rechnung abgelegt" : "Als erledigt markiert"),
+      () => api(`/api/mails/${record.id}/review`, { method: "POST", body: { action: kind, note: kind === "file" ? t("Nach Prüfung von Hand abgelegt", "Filed by hand after review") : t("Geprüft und erledigt", "Reviewed and done") } }),
+      () => (kind === "file" ? t("Rechnung abgelegt", "Invoice filed") : t("Als erledigt markiert", "Marked as done")),
     );
   return (
-    <StatusFrame tone={quarantined ? "bad" : "accent"} icon={quarantined ? ShieldAlert : CircleAlert} eyebrow={quarantined ? "Gestoppt" : "Prüfen"} title={title}>
+    <StatusFrame tone={quarantined ? "bad" : "accent"} icon={quarantined ? ShieldAlert : CircleAlert} eyebrow={quarantined ? t("Gestoppt", "Stopped") : t("Prüfen", "Review")} title={title}>
       <Reasons findings={reasons} />
       <ReplySentNote record={record} />
       <div className="mt-5 flex flex-col gap-2">
         {action.error && <ErrorNote message={action.error} />}
         {canFile && (
           <Button variant="primary" size="lg" className="w-full" icon={<FolderCheck aria-hidden />} busy={action.busy === "file"} disabled={action.busy !== null} onClick={() => review("file")}>
-            Geprüft, ablegen
+            {t("Geprüft, ablegen", "Reviewed, file")}
           </Button>
         )}
         <Button variant={canFile ? "outline" : "primary"} size={canFile ? "md" : "lg"} className={cn("w-full", canFile && "border-transparent")} icon={<SquareCheck aria-hidden />} busy={action.busy === "close"} disabled={action.busy !== null} onClick={() => review("close")}>
-          {quarantined ? "Erledigt, nicht antworten" : "Erledigt"}
+          {quarantined ? t("Erledigt, nicht antworten", "Done, no reply") : t("Erledigt", "Done")}
         </Button>
         <ReplyButton record={record} onReady={onReplyReady} />
       </div>
@@ -624,8 +648,8 @@ function ReviewDecision({ record, onDone, onReplyReady }: { record: ProcessedMai
 function DeliveryFailed({ record, onDone }: { record: ProcessedMail; onDone: () => void }) {
   const action = useAction(record, onDone);
   return (
-    <StatusFrame tone="bad" icon={CircleSlash} eyebrow="Versand" title="Nicht versendet">
-      <p className="mt-4 text-[13px] leading-relaxed text-ink-2">n8n hat die Antwort nicht übernommen.</p>
+    <StatusFrame tone="bad" icon={CircleSlash} eyebrow={t("Versand", "Sending")} title={t("Nicht versendet", "Not sent")}>
+      <p className="mt-4 text-[13px] leading-relaxed text-ink-2">{t("n8n hat die Antwort nicht übernommen.", "n8n did not take the reply.")}</p>
       {action.error && <div className="mt-3"><ErrorNote message={action.error} /></div>}
       <div className="mt-4 grid grid-cols-2 gap-2">
         <Button
@@ -634,10 +658,10 @@ function DeliveryFailed({ record, onDone }: { record: ProcessedMail; onDone: () 
           busy={action.busy === "retry"}
           disabled={action.busy !== null}
           onClick={() =>
-            action.run("retry", () => api<ProcessedMail>(`/api/mails/${record.id}/retry`, { method: "POST" }), (r) => ((r as ProcessedMail).status === "approved" ? "n8n hat den Versand übernommen" : "Versand weiter nicht möglich"))
+            action.run("retry", () => api<ProcessedMail>(`/api/mails/${record.id}/retry`, { method: "POST" }), (r) => ((r as ProcessedMail).status === "approved" ? t("n8n hat den Versand übernommen", "n8n took over sending") : t("Versand weiter nicht möglich", "Still unable to send")))
           }
         >
-          Erneut senden
+          {t("Erneut senden", "Send again")}
         </Button>
         <Button
           variant="danger-ghost"
@@ -645,9 +669,9 @@ function DeliveryFailed({ record, onDone }: { record: ProcessedMail; onDone: () 
           icon={<Trash2 aria-hidden />}
           busy={action.busy === "discard"}
           disabled={action.busy !== null}
-          onClick={() => action.run("discard", () => api(`/api/mails/${record.id}/discard`, { method: "POST", body: { reason: "Versand fehlgeschlagen, verworfen" } }), () => "Antwort verworfen")}
+          onClick={() => action.run("discard", () => api(`/api/mails/${record.id}/discard`, { method: "POST", body: { reason: t("Versand fehlgeschlagen, verworfen", "Sending failed, discarded") } }), () => t("Antwort verworfen", "Reply discarded"))}
         >
-          Verwerfen
+          {t("Verwerfen", "Discard")}
         </Button>
       </div>
     </StatusFrame>
@@ -660,7 +684,7 @@ function ReplySentNote({ record }: { record: ProcessedMail }) {
   return (
     <p className="mt-4 flex items-center gap-2 text-[13.5px] font-medium text-good">
       <CheckCheck className="size-4" aria-hidden />
-      Antwort gesendet
+      {t("Antwort gesendet", "Reply sent")}
     </p>
   );
 }
@@ -690,24 +714,24 @@ function StatusCard({
   );
   switch (record.status) {
     case "sent":
-      return <StatusFrame tone="good" icon={CheckCheck} eyebrow={eyebrow} title="Gesendet" />;
+      return <StatusFrame tone="good" icon={CheckCheck} eyebrow={eyebrow} title={t("Gesendet", "Sent")} />;
     case "approved":
-      return <StatusFrame tone="accent" icon={Send} eyebrow={eyebrow} title="Versand läuft" />;
+      return <StatusFrame tone="accent" icon={Send} eyebrow={eyebrow} title={t("Versand läuft", "Sending")} />;
     case "filed":
       return (
-        <StatusFrame tone="neutral" icon={record.invoice ? FolderCheck : CircleCheck} eyebrow={eyebrow} title="Abgelegt">
+        <StatusFrame tone="neutral" icon={record.invoice ? FolderCheck : CircleCheck} eyebrow={eyebrow} title={t("Abgelegt", "Filed")}>
           {after}
         </StatusFrame>
       );
     case "discarded":
       return (
-        <StatusFrame tone="neutral" icon={Trash2} eyebrow={eyebrow} title="Verworfen">
+        <StatusFrame tone="neutral" icon={Trash2} eyebrow={eyebrow} title={t("Verworfen", "Discarded")}>
           {after}
         </StatusFrame>
       );
     default:
       return (
-        <StatusFrame tone="neutral" icon={SquareCheck} eyebrow={eyebrow} title="Erledigt">
+        <StatusFrame tone="neutral" icon={SquareCheck} eyebrow={eyebrow} title={t("Erledigt", "Done")}>
           {after}
         </StatusFrame>
       );
@@ -759,13 +783,13 @@ function Facts({ record, editor }: { record: ProcessedMail; editor: EditorState 
   const mock = record.steps.some((s) => s.model.startsWith("mock:"));
   const auth = record.mail.auth;
   const authPassed = !!auth && authOk(auth.spf) && authOk(auth.dkim) && authOk(auth.dmarc);
-  const faqUsed = editor && record.draft ? FAQ.filter((f) => record.draft!.draft.used_faq_ids.includes(f.id)) : [];
+  const faqUsed = editor && record.draft ? t(FAQ_DE, FAQ_EN).filter((f) => record.draft!.draft.used_faq_ids.includes(f.id)) : [];
   const replyTo = (record.mail.replyTo ?? record.mail.from).address;
   const rules = record.ruleFindings;
   return (
-    <section aria-label="Einordnung" className="flex flex-col gap-1">
+    <section aria-label={t("Einordnung", "Classification")} className="flex flex-col gap-1">
       <Fact
-        label="Art"
+        label={t("Art", "Type")}
         value={
           <span className="inline-flex items-center gap-2">
             <Dot className={cn("size-2.5", CATEGORY_COLOR[record.category].bg)} />
@@ -780,41 +804,41 @@ function Facts({ record, editor }: { record: ProcessedMail; editor: EditorState 
                 {r}
               </li>
             ))}
-            {cls.contains_instructions && <li className="text-[13px] text-bad">Modell meldet Anweisungen im Text.</li>}
+            {cls.contains_instructions && <li className="text-[13px] text-bad">{t("Modell meldet Anweisungen im Text.", "Model reports instructions in the text.")}</li>}
           </ul>
         ) : (
-          <p className="text-[13px] text-ink-2">Keine gültige Einordnung vom Modell.</p>
+          <p className="text-[13px] text-ink-2">{t("Keine gültige Einordnung vom Modell.", "No valid classification from the model.")}</p>
         )}
       </Fact>
       {cls && (
         <Fact
-          label="Sicherheit"
+          label={t("Sicherheit", "Confidence")}
           value={
             <span className="inline-flex items-center gap-2.5">
               <MiniBar value={cls.confidence} />
-              <span className="tnum">{Math.round(cls.confidence * 100)} %</span>
+              <span className="tnum">{Math.round(cls.confidence * 100)}{t(" %", "%")}</span>
             </span>
           }
         />
       )}
       <Fact
-        label="Herkunft"
+        label={t("Herkunft", "Origin")}
         value={
           auth ? (
             <span className={cn("inline-flex items-center gap-1.5", authPassed ? "text-good" : "text-bad")}>
               {authPassed ? <ShieldCheck className="size-4" aria-hidden /> : <ShieldAlert className="size-4" aria-hidden />}
-              {authPassed ? "bestätigt" : "nicht bestätigt"}
+              {authPassed ? t("bestätigt", "verified") : t("nicht bestätigt", "not verified")}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 text-ink-2">
               <ShieldQuestion className="size-4" aria-hidden />
-              ohne Prüfkopf
+              {t("ohne Prüfkopf", "no auth header")}
             </span>
           )
         }
       >
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13px]">
-          <dt className="text-ink-3">Antwort an</dt>
+          <dt className="text-ink-3">{t("Antwort an", "Reply to")}</dt>
           <dd className="min-w-0 truncate text-right text-ink">{replyTo}</dd>
           {auth && (
             <>
@@ -827,14 +851,20 @@ function Facts({ record, editor }: { record: ProcessedMail; editor: EditorState 
         </dl>
       </Fact>
       <Fact
-        label="Regeln"
-        value={rules.length === 0 ? <span className="text-ink-2">keine Treffer</span> : <span className="font-medium text-bad">{rules.length === 1 ? "1 Treffer" : `${rules.length} Treffer`}</span>}
+        label={t("Regeln", "Rules")}
+        value={
+          rules.length === 0 ? (
+            <span className="text-ink-2">{t("keine Treffer", "no hits")}</span>
+          ) : (
+            <span className="font-medium text-bad">{rules.length === 1 ? t("1 Treffer", "1 hit") : t(`${rules.length} Treffer`, `${rules.length} hits`)}</span>
+          )
+        }
       >
         {rules.length > 0 ? <Findings findings={rules} /> : undefined}
       </Fact>
       {faqUsed.length > 0 && (
         <Fact
-          label="Quellen"
+          label={t("Quellen", "Sources")}
           value={
             <span className="inline-flex items-center gap-1.5">
               <BookOpenText className="size-4 text-ink-3" aria-hidden />
@@ -856,11 +886,11 @@ function Facts({ record, editor }: { record: ProcessedMail; editor: EditorState 
         </Fact>
       )}
       <Fact
-        label="Modell"
+        label={t("Modell", "Model")}
         value={
           <span className="inline-flex items-center gap-2">
             <BrandGlyph brand="claude" />
-            {mock ? "Testdaten" : record.steps.length === 1 ? "1 Schritt" : `${record.steps.length} Schritte`}
+            {mock ? t("Testdaten", "Test data") : record.steps.length === 1 ? t("1 Schritt", "1 step") : t(`${record.steps.length} Schritte`, `${record.steps.length} steps`)}
           </span>
         }
       >
@@ -868,10 +898,10 @@ function Facts({ record, editor }: { record: ProcessedMail; editor: EditorState 
           {record.steps.map((s) => (
             <li key={s.step} className="flex items-center justify-between gap-3">
               <span className="text-ink-2">{STEP_LABEL[s.step] ?? s.step}</span>
-              <span className={cn("truncate", s.ok ? "text-ink" : "text-bad")}>{s.ok ? s.model.replace(/^mock:/, "") : (s.error ?? "Fehler")}</span>
+              <span className={cn("truncate", s.ok ? "text-ink" : "text-bad")}>{s.ok ? s.model.replace(/^mock:/, "") : (s.error ?? t("Fehler", "Error"))}</span>
             </li>
           ))}
-          {record.status === "quarantined" && <li className="text-ink-2">Danach kein weiterer Modellaufruf.</li>}
+          {record.status === "quarantined" && <li className="text-ink-2">{t("Danach kein weiterer Modellaufruf.", "No further model call after that.")}</li>}
         </ul>
       </Fact>
     </section>
@@ -881,18 +911,18 @@ function Facts({ record, editor }: { record: ProcessedMail; editor: EditorState 
 function Attachments({ record }: { record: ProcessedMail }) {
   if (record.mail.attachments.length === 0) return null;
   return (
-    <section aria-label="Anhänge">
+    <section aria-label={t("Anhänge", "Attachments")}>
       <ul className="flex flex-col gap-1">
         {record.mail.attachments.map((a) => (
           <li key={a.index} className="flex items-center gap-3 rounded-[16px] bg-surface-2 py-2 pr-2 pl-3 text-[13px]">
             <Paperclip className="size-4 shrink-0 text-ink-3" aria-hidden />
             <span className="min-w-0 flex-1 truncate text-ink">{a.filename}</span>
-            <span className="tnum shrink-0 text-[12px] text-ink-3">{a.accepted ? `${Math.max(1, Math.round(a.size / 1024))} KB` : "abgelehnt"}</span>
+            <span className="tnum shrink-0 text-[12px] text-ink-3">{a.accepted ? `${Math.max(1, Math.round(a.size / 1024))} KB` : t("abgelehnt", "rejected")}</span>
             {a.accepted && (
               <a
                 href={`/api/mails/${record.id}/attachments/${a.index}`}
                 className="press grid size-8 shrink-0 place-items-center rounded-full bg-surface text-ink-2 hover:text-ink"
-                aria-label={`${a.filename} herunterladen`}
+                aria-label={t(`${a.filename} herunterladen`, `Download ${a.filename}`)}
               >
                 <Download className="size-4" />
               </a>
@@ -909,17 +939,20 @@ function Attachments({ record }: { record: ProcessedMail }) {
 function ActorMark({ actor }: { actor: AuditEvent["actor"] }) {
   if (actor === "n8n") return <BrandLogo brand="n8n" size={32} />;
   if (actor === "system") return <BrandLogo brand="claude" size={32} />;
-  return <Avatar name="Jonas Hofmann" size="sm" />;
+  return <Avatar name={t("Jonas Hofmann", "Conor Brennan")} size="sm" />;
 }
 
-const ACTOR_LABEL: Record<string, string> = { owner: "Jonas Hofmann", n8n: "n8n", system: "Assistent" };
-const timeShort = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" });
+const ACTOR_LABEL: Record<string, string> = t<Record<string, string>>(
+  { owner: "Jonas Hofmann", n8n: "n8n", system: "Assistent" },
+  { owner: "Conor Brennan", n8n: "n8n", system: "Assistant" },
+);
+const timeShort = new Intl.DateTimeFormat(INTL_LOCALE, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", timeZone: TIME_ZONE });
 
 function Timeline({ events }: { events: AuditEvent[] }) {
   if (events.length === 0) return null;
   return (
-    <section aria-label="Verlauf">
-      <h3 className="mb-2 px-3 text-[13px] font-medium text-ink-3">Verlauf</h3>
+    <section aria-label={t("Verlauf", "History")}>
+      <h3 className="mb-2 px-3 text-[13px] font-medium text-ink-3">{t("Verlauf", "History")}</h3>
       <ol className="relative flex flex-col gap-1 before:absolute before:top-5 before:bottom-5 before:left-[27px] before:w-px before:bg-line">
         {events.map((e, i) => (
           <motion.li key={e.id} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, delay: i * 0.05 }}>
@@ -1024,7 +1057,7 @@ function Loaded({
         </div>
       </Panel>
       {wide && (
-        <Panel as="aside" className="w-[340px] shrink-0" aria-label="Aktionen">
+        <Panel as="aside" className="w-[340px] shrink-0" aria-label={t("Aktionen", "Actions")}>
           <div className="scroll-quiet min-h-0 flex-1 overflow-y-auto">{fade(`${record.id}-aside`, <ActionColumn record={record} events={events} editor={editor} sendRef={sendRef} onDone={onDone} onReplyReady={onReplyReady} />)}</div>
         </Panel>
       )}
@@ -1048,7 +1081,7 @@ export function MailDetail({ id, back, onDone, onReplyReady }: { id: string; bac
         <div className="p-6">
           <BackButton to={back.to} label={back.label} />
           {errorStatus === 404 || errorStatus === 400 ? (
-            <EmptyState icon={X} title="Diese Mail gibt es nicht (mehr)." action={<Button onClick={() => navigate("/posteingang")}>Zum Posteingang</Button>} />
+            <EmptyState icon={X} title={t("Diese Mail gibt es nicht (mehr).", "This mail no longer exists.")} action={<Button onClick={() => navigate(ROUTES.inbox)}>{t("Zum Posteingang", "To inbox")}</Button>} />
           ) : (
             <ErrorNote message={error} onRetry={reload} />
           )}

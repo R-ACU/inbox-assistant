@@ -1,6 +1,7 @@
 import { Eye, EyeOff } from "lucide-react";
 import { motion, useReducedMotionConfig, type TargetAndTransition } from "motion/react";
 import { useEffect, useLayoutEffect, useRef, useState, type InputHTMLAttributes } from "react";
+import { t } from "../../i18n";
 import { cn } from "../../utils";
 import { Input } from "./input";
 
@@ -81,7 +82,7 @@ export function PasswordInput({ id, className, ...rest }: PasswordInputProps) {
       />
       <button
         type="button"
-        aria-label="Passwort anzeigen"
+        aria-label={t("Passwort anzeigen", "Show password")}
         aria-pressed={visible}
         aria-controls={id}
         onMouseDown={(e) => e.preventDefault()}

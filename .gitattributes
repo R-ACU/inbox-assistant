@@ -1,5 +1,7 @@
 # Test mails keep their exact bytes (CRLF as mail requires); hashes and the
 # reproducibility check in CI depend on them, so git must not convert line endings.
 fixtures/mails/** -text
+fixtures/en/mails/** -text
 # The bad scan is rendered once (fonts differ per OS) and kept as an image.
 fixtures/scans/** binary
+fixtures/en/scans/** binary

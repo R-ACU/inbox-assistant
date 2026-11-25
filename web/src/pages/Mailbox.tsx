@@ -17,15 +17,16 @@ import { Badge, Dot } from "../components/ui/badge";
 import { Segmented } from "../components/ui/segmented";
 import { Select, type Option } from "../components/ui/select";
 import { Tooltip } from "../components/ui/tooltip";
+import { ROUTES, t } from "../i18n";
 import { CATEGORY_LABEL, formatCents, formatListTime, navigate, useApi, useSearch } from "../lib";
 import { cn } from "../utils";
 
 export type MailTab = "freigabe" | "pruefen" | "alle";
 
 const TAB: Record<MailTab, { label: string; list: string; item: (id: string) => string; listLabel: string }> = {
-  freigabe: { label: "Freigabe", list: "/freigabe", item: (id) => `/freigabe/${id}`, listLabel: "Freigabe" },
-  pruefen: { label: "Prüfen", list: "/pruefliste", item: (id) => `/pruefliste/${id}`, listLabel: "Prüfen" },
-  alle: { label: "Alle", list: "/posteingang", item: (id) => `/mail/${id}`, listLabel: "Mails" },
+  freigabe: { label: t("Freigabe", "Approval"), list: ROUTES.approval, item: (id) => `${ROUTES.approval}/${id}`, listLabel: t("Freigabe", "Approval") },
+  pruefen: { label: t("Prüfen", "Review"), list: ROUTES.review, item: (id) => `${ROUTES.review}/${id}`, listLabel: t("Prüfen", "Review") },
+  alle: { label: t("Alle", "All"), list: ROUTES.inbox, item: (id) => `${ROUTES.mail}/${id}`, listLabel: "Mails" },
 };
 
 const REVIEW_ORDER: Partial<Record<MailStatus, number>> = { delivery_failed: 0, needs_review: 1, quarantined: 2 };
@@ -39,7 +40,7 @@ function inTab(tab: MailTab, m: MailListItem) {
 
 type Filter = "all" | Category;
 const FILTERS: Option<Filter>[] = [
-  { value: "all", label: "Alle Arten" },
+  { value: "all", label: t("Alle Arten", "All types") },
   ...(["invoice", "inquiry", "other", "suspicious"] as const).map((c) => ({ value: c, label: CATEGORY_LABEL[c], icon: <Dot className={cn("size-2.5", CATEGORY_COLOR[c].bg)} /> })),
 ];
 
@@ -52,8 +53,8 @@ function RowEnd({ m, tab }: { m: MailListItem; tab: MailTab }) {
   if (tab === "pruefen" && (m.status === "quarantined" || m.status === "delivery_failed")) return <Badge tone="bad">{chip}</Badge>;
   if (tab === "freigabe" && m.findingCount > 0)
     return (
-      <Tooltip content={m.findingCount === 1 ? "1 Hinweis im Entwurf" : `${m.findingCount} Hinweise im Entwurf`}>
-        <span className="grid size-6 place-items-center rounded-full bg-bad-soft text-bad" role="img" aria-label={m.findingCount === 1 ? "1 Hinweis" : `${m.findingCount} Hinweise`}>
+      <Tooltip content={m.findingCount === 1 ? t("1 Hinweis im Entwurf", "1 flag in the draft") : t(`${m.findingCount} Hinweise im Entwurf`, `${m.findingCount} flags in the draft`)}>
+        <span className="grid size-6 place-items-center rounded-full bg-bad-soft text-bad" role="img" aria-label={m.findingCount === 1 ? t("1 Hinweis", "1 flag") : t(`${m.findingCount} Hinweise`, `${m.findingCount} flags`)}>
           <TriangleAlert className="size-3.5" aria-hidden />
         </span>
       </Tooltip>
@@ -84,13 +85,13 @@ function MailRow({ m, tab, active, href }: { m: MailListItem; tab: MailTab; acti
 }
 
 const EMPTY: Record<MailTab, { icon: typeof Inbox; title: string }> = {
-  freigabe: { icon: CheckCheck, title: "Alles freigegeben." },
-  pruefen: { icon: ShieldCheck, title: "Nichts zu prüfen." },
-  alle: { icon: Inbox, title: "Noch keine Mails." },
+  freigabe: { icon: CheckCheck, title: t("Alles freigegeben.", "All approved.") },
+  pruefen: { icon: ShieldCheck, title: t("Nichts zu prüfen.", "Nothing to review.") },
+  alle: { icon: Inbox, title: t("Noch keine Mails.", "No mails yet.") },
 };
 
 export function MailboxPage({ tab, selectedId }: { tab: MailTab; selectedId?: string }) {
-  usePageTitle(TAB[tab].label === "Alle" ? "Posteingang" : TAB[tab].label);
+  usePageTitle(tab === "alle" ? t("Posteingang", "Inbox") : TAB[tab].label);
   const { data, error, loading, reload } = useApi<MailListItem[]>("/api/mails");
   const refreshCounts = useRefreshCounts();
   const search = useSearch();
@@ -124,7 +125,7 @@ export function MailboxPage({ tab, selectedId }: { tab: MailTab; selectedId?: st
     items.map((m) => m.id),
     current,
     href,
-    tab === "alle" ? { e: () => navigate(currentItem?.status === "awaiting_approval" ? `/freigabe/${currentItem.id}` : "/freigabe") } : undefined,
+    tab === "alle" ? { e: () => navigate(currentItem?.status === "awaiting_approval" ? TAB.freigabe.item(currentItem.id) : ROUTES.approval) } : undefined,
   );
 
   const afterAction = () => {
@@ -139,11 +140,11 @@ export function MailboxPage({ tab, selectedId }: { tab: MailTab; selectedId?: st
   const tabs = (
     <Segmented
       role="tablist"
-      label="Ansicht"
+      label={t("Ansicht", "View")}
       fill
       value={tab}
-      onChange={(t) => navigate(TAB[t].list + suffix)}
-      options={(["freigabe", "pruefen", "alle"] as const).map((t) => ({ value: t, label: TAB[t].label, count: data ? counts[t] : undefined }))}
+      onChange={(v) => navigate(TAB[v].list + suffix)}
+      options={(["freigabe", "pruefen", "alle"] as const).map((v) => ({ value: v, label: TAB[v].label, count: data ? counts[v] : undefined }))}
     />
   );
 
@@ -154,11 +155,11 @@ export function MailboxPage({ tab, selectedId }: { tab: MailTab; selectedId?: st
         {query && (
           <div className="flex items-center gap-2 px-1 text-[13px]">
             <Search className="size-3.5 text-ink-3" aria-hidden />
-            <span className="min-w-0 truncate text-ink-2">„{query}“</span>
+            <span className="min-w-0 truncate text-ink-2">{t(`„${query}“`, `“${query}”`)}</span>
             <button
               type="button"
               onClick={() => navigate(TAB[tab].list)}
-              aria-label="Suche aufheben"
+              aria-label={t("Suche aufheben", "Clear search")}
               className="press ml-auto grid size-7 place-items-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-ink"
             >
               <X className="size-3.5" aria-hidden />
@@ -171,11 +172,11 @@ export function MailboxPage({ tab, selectedId }: { tab: MailTab; selectedId?: st
 
   const empty = EMPTY[tab];
   const list = (
-    <ListPanel title="Posteingang" aside={tab === "alle" ? <Select variant="pill" label="Kategorie" value={filter} options={FILTERS} onChange={setFilter} /> : undefined} toolbar={toolbar}>
+    <ListPanel title={t("Posteingang", "Inbox")} aside={tab === "alle" ? <Select variant="pill" label={t("Kategorie", "Category")} value={filter} options={FILTERS} onChange={setFilter} /> : undefined} toolbar={toolbar}>
       {error && <ErrorNote message={error} onRetry={reload} />}
       {loading && !data && <ListSkeleton rows={7} />}
       {data && items.length === 0 && (
-        <EmptyState icon={query || filter !== "all" ? Search : empty.icon} tone={query || filter !== "all" || tab === "alle" ? "neutral" : "good"} title={query || filter !== "all" ? "Keine Mail passt dazu." : empty.title} />
+        <EmptyState icon={query || filter !== "all" ? Search : empty.icon} tone={query || filter !== "all" || tab === "alle" ? "neutral" : "good"} title={query || filter !== "all" ? t("Keine Mail passt dazu.", "No matching mail.") : empty.title} />
       )}
       {items.length > 0 && (
         <RowList id={`list-${tab}`} label={TAB[tab].listLabel}>
@@ -197,7 +198,7 @@ export function MailboxPage({ tab, selectedId }: { tab: MailTab; selectedId?: st
         current ? (
           <MailDetail
             id={current}
-            back={{ to: TAB[tab].list + suffix, label: "Posteingang" }}
+            back={{ to: TAB[tab].list + suffix, label: t("Posteingang", "Inbox") }}
             onDone={afterAction}
             // A requested draft waits in Freigabe like every other draft: open it there (in place of this entry, so back skips it).
             onReplyReady={(drafted) => {
@@ -207,7 +208,7 @@ export function MailboxPage({ tab, selectedId }: { tab: MailTab; selectedId?: st
           />
         ) : (
           <ReaderEmpty
-            title={!data ? "Wird geladen" : query || filter !== "all" ? "Keine Treffer." : empty.title}
+            title={!data ? t("Wird geladen", "Loading") : query || filter !== "all" ? t("Keine Treffer.", "No results.") : empty.title}
             icon={!data ? Inbox : query || filter !== "all" ? Search : tab !== "alle" ? PartyPopper : Inbox}
           />
         )

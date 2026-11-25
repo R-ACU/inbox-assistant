@@ -5,11 +5,14 @@
  */
 import { resolve } from "node:path";
 import { z } from "zod";
+import type { Locale } from "../shared/locale";
 import { DEFAULT_MODELS } from "../llm/provider";
 import { verifyPassword } from "./crypto";
 
 const EnvSchema = z
   .object({
+    // Language and tenant of this deployment: the German painting business or the Irish one (English UI).
+    APP_LOCALE: z.enum(["de", "en"]).default("de"),
     PORT: z.coerce.number().int().min(1).max(65535).default(3220),
     HOST: z.string().default("127.0.0.1"),
     LLM_MODE: z.enum(["mock", "claude"]).default("mock"),
@@ -22,7 +25,8 @@ const EnvSchema = z
     COOKIE_SECURE: z.enum(["true", "false"]).default("false"),
     SESSION_TTL_HOURS: z.coerce.number().positive().max(72).default(12),
     DATA_DIR: z.string().default("./data"),
-    MOCK_RESPONSES: z.string().default("./fixtures/model/responses.json"),
+    // Default per language: fixtures/ (German) or fixtures/en/ (English).
+    MOCK_RESPONSES: z.string().optional(),
     CONTRACT_SAMPLES_DIR: z.string().default("./fixtures/contracts"),
     N8N_BASE_URL: z.string().url().optional(),
     // Only behind a reverse proxy on the same machine: the proxy addresses whose
@@ -53,7 +57,13 @@ const EnvSchema = z
     }
   });
 
+/** Test set of a language: mails, mock answers and expected outcomes. */
+export function fixtureRoot(locale: Locale): string {
+  return locale === "en" ? "./fixtures/en" : "./fixtures";
+}
+
 export interface AppConfig {
+  locale: Locale;
   port: number;
   host: string;
   llmMode: "mock" | "claude";
@@ -66,6 +76,8 @@ export interface AppConfig {
   sessionTtlMs: number;
   dataDir: string;
   mockResponses: string;
+  /** Folder with the test mails the seed loads (mails/ and mails/extra/ inside). */
+  fixturesDir: string;
   contractSamplesDir: string;
   n8nBaseUrl: string | null;
   /** Proxy addresses allowed to set the client IP (rate limits key on it); false = none. */
@@ -82,6 +94,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
   const e = parsed.data;
   return {
+    locale: e.APP_LOCALE,
     port: e.PORT,
     host: e.HOST,
     llmMode: e.LLM_MODE,
@@ -93,7 +106,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     cookieSecure: e.COOKIE_SECURE === "true",
     sessionTtlMs: e.SESSION_TTL_HOURS * 3_600_000,
     dataDir: resolve(e.DATA_DIR),
-    mockResponses: resolve(e.MOCK_RESPONSES),
+    mockResponses: resolve(e.MOCK_RESPONSES ?? `${fixtureRoot(e.APP_LOCALE)}/model/responses.json`),
+    fixturesDir: resolve(fixtureRoot(e.APP_LOCALE)),
     contractSamplesDir: resolve(e.CONTRACT_SAMPLES_DIR),
     n8nBaseUrl: e.N8N_BASE_URL ?? null,
     trustProxy: e.TRUST_PROXY ? e.TRUST_PROXY.split(",").map((p) => p.trim()) : false,
