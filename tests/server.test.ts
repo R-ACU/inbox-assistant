@@ -97,6 +97,39 @@ describe("configuration", () => {
     expect(() => loadConfig({ ...base, TRUST_PROXY: "true" })).toThrow(/TRUST_PROXY/);
     expect(() => loadConfig({ ...base, TRUST_PROXY: "*" })).toThrow(/TRUST_PROXY/);
   });
+
+  it("shows a demo password only when set, and only if it is the real one", () => {
+    const base = { APP_PASSWORD_HASH: passwordHash, INBOX_WEBHOOK_SECRET: SECRET };
+    expect(loadConfig(base).publicDemoPassword).toBeNull();
+    expect(loadConfig({ ...base, PUBLIC_DEMO_PASSWORD: "" }).publicDemoPassword).toBeNull();
+    expect(loadConfig({ ...base, PUBLIC_DEMO_PASSWORD: PASSWORD }).publicDemoPassword).toBe(PASSWORD);
+    expect(() => loadConfig({ ...base, PUBLIC_DEMO_PASSWORD: "ein-anderes-passwort" })).toThrow(/PUBLIC_DEMO_PASSWORD/);
+  });
+});
+
+describe("public demo access", () => {
+  it("is off by default: the signed-out session carries no password", async () => {
+    const res = await ctx.app.inject({ method: "GET", url: "/api/auth/session" });
+    expect(res.json().demoPassword).toBeNull();
+  });
+
+  it("when switched on, hands the password to signed-out visitors only, and it signs in", async () => {
+    const config = { ...ctx.config, publicDemoPassword: PASSWORD };
+    const service = new InboxService({ config, store: ctx.store, llm: mockProvider(), tenant: TENANT, now: () => NOW, fetch: ctx.fetchMock as unknown as typeof fetch });
+    const app = await buildApp({ config, store: ctx.store, service, now: () => NOW, webRoot: join(ctx.dir, "no-web") });
+    try {
+      const out = await app.inject({ method: "GET", url: "/api/auth/session" });
+      expect(out.json().demoPassword).toBe(PASSWORD);
+      const login = await app.inject({ method: "POST", url: "/api/auth/login", headers: { origin: ORIGIN }, payload: { password: out.json().demoPassword } });
+      expect(login.statusCode).toBe(200);
+      const cookie = login.cookies.find((c) => c.name === SESSION_COOKIE)!;
+      const signedIn = await app.inject({ method: "GET", url: "/api/auth/session", headers: { cookie: `${SESSION_COOKIE}=${cookie.value}` } });
+      expect(signedIn.json().authenticated).toBe(true);
+      expect(signedIn.json()).not.toHaveProperty("demoPassword");
+    } finally {
+      await app.close();
+    }
+  });
 });
 
 describe("login and session", () => {

@@ -6,6 +6,7 @@
 import { resolve } from "node:path";
 import { z } from "zod";
 import { DEFAULT_MODELS } from "../llm/provider";
+import { verifyPassword } from "./crypto";
 
 const EnvSchema = z
   .object({
@@ -33,10 +34,22 @@ const EnvSchema = z
         .regex(/^\s*[\d.:a-fA-F]+(\/\d{1,3})?\s*(,\s*[\d.:a-fA-F]+(\/\d{1,3})?\s*)*$/, "comma-separated IP addresses or CIDR ranges")
         .optional(),
     ),
+    // Only for a public demo with invented data: the login page shows this password
+    // with a one-click button. It must match APP_PASSWORD_HASH. Unset = no hint.
+    PUBLIC_DEMO_PASSWORD: z.preprocess((v) => (typeof v === "string" && v.trim() === "" ? undefined : v), z.string().optional()),
   })
   .superRefine((env, ctx) => {
     if (env.LLM_MODE === "claude" && !env.ANTHROPIC_API_KEY) {
       ctx.addIssue({ code: "custom", path: ["ANTHROPIC_API_KEY"], message: "required when LLM_MODE=claude" });
+    }
+    if (env.PUBLIC_DEMO_PASSWORD !== undefined) {
+      let matches = false;
+      try {
+        matches = verifyPassword(env.PUBLIC_DEMO_PASSWORD, env.APP_PASSWORD_HASH);
+      } catch {
+        matches = false;
+      }
+      if (!matches) ctx.addIssue({ code: "custom", path: ["PUBLIC_DEMO_PASSWORD"], message: "does not match APP_PASSWORD_HASH" });
     }
   });
 
@@ -57,6 +70,8 @@ export interface AppConfig {
   n8nBaseUrl: string | null;
   /** Proxy addresses allowed to set the client IP (rate limits key on it); false = none. */
   trustProxy: string[] | false;
+  /** Public demo password shown on the login page; null = not shown. */
+  publicDemoPassword: string | null;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -82,5 +97,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     contractSamplesDir: resolve(e.CONTRACT_SAMPLES_DIR),
     n8nBaseUrl: e.N8N_BASE_URL ?? null,
     trustProxy: e.TRUST_PROXY ? e.TRUST_PROXY.split(",").map((p) => p.trim()) : false,
+    publicDemoPassword: e.PUBLIC_DEMO_PASSWORD ?? null,
   };
 }

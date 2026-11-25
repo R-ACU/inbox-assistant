@@ -143,7 +143,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get("/api/auth/session", async (request) =>
     request.session
       ? { authenticated: true, csrfToken: request.session.csrf, mode: service.mode }
-      : { authenticated: false, csrfToken: null, mode: service.mode },
+      : { authenticated: false, csrfToken: null, mode: service.mode, demoPassword: config.publicDemoPassword },
   );
 
   app.post(

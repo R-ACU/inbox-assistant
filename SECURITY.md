@@ -45,6 +45,7 @@ Customer mails and addresses, supplier invoices and bank details, the business o
 ## Known limits
 
 - One user, password only. No 2FA, no roles, no account lockout beyond rate limiting.
+- The public demo (`PUBLIC_DEMO_PASSWORD` set) shows its password on the login page, so anyone can sign in there. That is on purpose: it holds only invented data, runs in mock mode without an API key and sends no mail. The button still signs in through the normal, rate-limited login route; the server refuses to start if the shown password is not the real one. Unset, nothing is shown.
 - The rate limit and the replay cache are in memory and per process; a restart resets them, several instances would not share them.
 - No virus scanner on attachments; the type checks are not a replacement.
 - The instruction rules are a tripwire, not a complete protection. They are pattern-based (German and English) and cover the usual tricks with regression tests, but a new paraphrase, a synonym or a mix of tricks in one word (for example "1" as i and as l in the same sentence) can pass. That is acceptable only because of what stands behind them: the model has no tools, totals and bank details are checked in code, and no reply leaves without a person approving it.

@@ -1,4 +1,4 @@
-import { Calculator, KeyRound, Send, ShieldCheck } from "lucide-react";
+import { ArrowRight, Calculator, KeyRound, Send, ShieldCheck } from "lucide-react";
 import { motion } from "motion/react";
 import { useState, type FormEvent } from "react";
 import { BrandMark, DemoNote, ModeToggle, usePageTitle } from "../components/shell/AppShell";
@@ -6,11 +6,14 @@ import { Button } from "../components/ui/button";
 import { Label } from "../components/ui/input";
 import { PasswordInput } from "../components/ui/password-input";
 import { ApiError, api } from "../lib";
+import { cn } from "../utils";
 
 export interface Session {
   authenticated: boolean;
   csrfToken: string | null;
   mode: "mock" | "claude";
+  /** Set only on a public demo deployment, and only while signed out. */
+  demoPassword?: string | null;
 }
 
 const PROMISES = [
@@ -21,25 +24,36 @@ const PROMISES = [
 
 const ease = [0.23, 1, 0.32, 1] as const;
 
-export function LoginPage({ onDone }: { onDone: (s: Session) => void }) {
+export function LoginPage({ onDone, demoPassword = null }: { onDone: (s: Session) => void; demoPassword?: string | null }) {
   usePageTitle("Anmelden");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"form" | "demo" | null>(null);
   const [shake, setShake] = useState(0);
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
+  // Both buttons take the normal login route: the server checks the password either way.
+  const signIn = async (value: string, source: "form" | "demo") => {
+    setBusy(source);
     setError(null);
     try {
-      onDone(await api<Session>("/api/auth/login", { method: "POST", body: { password } }));
+      onDone(await api<Session>("/api/auth/login", { method: "POST", body: { password: value } }));
     } catch (err) {
       setError(err instanceof ApiError && err.status === 401 ? "Das Passwort stimmt nicht." : (err as Error).message);
       setShake((s) => s + 1);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
+  };
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    void signIn(password, "form");
+  };
+
+  const signInAsDemo = () => {
+    if (!demoPassword) return;
+    setPassword(demoPassword);
+    void signIn(demoPassword, "demo");
   };
 
   return (
@@ -105,7 +119,27 @@ export function LoginPage({ onDone }: { onDone: (s: Session) => void }) {
             transition={{ duration: 0.45, ease, delay: 0.1 }}
           >
             <h1 className="text-[30px] leading-tight font-medium tracking-[-0.03em] text-ink">Willkommen zurück</h1>
-            <p className="mt-2 mb-8 text-[14px] text-ink-2">Ihr Posteingang ist sortiert.</p>
+            <p className={cn("mt-2 text-[14px] text-ink-2", demoPassword ? "mb-6" : "mb-8")}>Ihr Posteingang ist sortiert.</p>
+            {demoPassword && (
+              <motion.section
+                aria-label="Demo-Zugang"
+                className="mb-6 flex items-center gap-3 rounded-[24px] bg-surface p-2 shadow-[0_1px_2px_rgb(16_24_40/0.06)]"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease, delay: 0.2 }}
+              >
+                <span className="grid size-10 shrink-0 place-items-center rounded-full bg-accent-soft">
+                  <KeyRound className="size-[18px] text-accent-text" aria-hidden />
+                </span>
+                <span className="min-w-0 flex-1 leading-tight">
+                  <span className="block text-[12.5px] text-ink-3">Demo-Zugang</span>
+                  <span className="mt-0.5 block truncate text-[15px] font-medium tracking-[-0.01em] text-ink">{demoPassword}</span>
+                </span>
+                <Button type="button" variant="soft" busy={busy === "demo"} disabled={busy !== null} onClick={signInAsDemo} icon={<ArrowRight aria-hidden />} className="flex-row-reverse">
+                  Demo öffnen
+                </Button>
+              </motion.section>
+            )}
             <Label htmlFor="password">Passwort</Label>
             <motion.div key={shake} animate={shake ? { x: [0, -6, 6, -4, 4, 0] } : undefined} transition={{ duration: 0.32 }}>
               <PasswordInput
@@ -123,7 +157,7 @@ export function LoginPage({ onDone }: { onDone: (s: Session) => void }) {
                 {error}
               </motion.p>
             )}
-            <Button type="submit" variant="primary" busy={busy} disabled={!password} size="lg" className="mt-5 h-12 w-full" icon={<KeyRound aria-hidden />}>
+            <Button type="submit" variant="primary" busy={busy === "form"} disabled={!password || busy !== null} size="lg" className="mt-5 h-12 w-full" icon={<KeyRound aria-hidden />}>
               Anmelden
             </Button>
             <p className="mt-6 text-[12.5px] text-ink-3">Testsystem mit erfundenen Daten.</p>

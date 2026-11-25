@@ -41,6 +41,8 @@ export default defineConfig({
       INBOX_WEBHOOK_SECRET: randomToken(32),
       APP_ORIGINS: `http://127.0.0.1:${E2E_PORT}`,
       ANTHROPIC_API_KEY: "",
+      // Shows the demo-access card on the login page, as on the public demo.
+      PUBLIC_DEMO_PASSWORD: E2E_PASSWORD,
     },
   },
 });

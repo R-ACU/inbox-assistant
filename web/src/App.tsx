@@ -100,10 +100,13 @@ function Routes() {
 
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
+  // Only a public demo deployment sends this (PUBLIC_DEMO_PASSWORD); kept for the login page after a logout.
+  const [demoPassword, setDemoPassword] = useState<string | null>(null);
 
   useEffect(() => {
     api<Session>("/api/auth/session").then((s) => {
       setCsrfToken(s.csrfToken);
+      setDemoPassword(s.demoPassword ?? null);
       setSession(s);
     });
     return onUnauthorized(() => setSession((s) => (s ? { ...s, authenticated: false, csrfToken: null } : s)));
@@ -126,6 +129,7 @@ export function App() {
           </div>
         ) : !session.authenticated ? (
           <LoginPage
+            demoPassword={demoPassword}
             onDone={(s) => {
               setCsrfToken(s.csrfToken);
               setSession(s);
